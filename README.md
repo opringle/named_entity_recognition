@@ -2,7 +2,7 @@
 
 [Implenting NN architecture from this paper](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
 
-![](./images/architecture.png)
+<img src="./images/architecture.png" alt="Drawing" style="width: 300px;"/>
 
 ## Datasets
 
