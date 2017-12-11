@@ -18,8 +18,7 @@
 
 ## Notes
 
-- Try with simple backward unrolling LSTM
-- 
+- Label shape is wrong.  Should be one hot encoded? Check what you did for CNN language model
 
 ## Improvements
 
