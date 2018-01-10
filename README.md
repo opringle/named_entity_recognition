@@ -12,11 +12,11 @@ a. building correct symbol shapes, data iterator looks to be working
 b. failing as soon as a different batch size comes in
 c. mxnet examples have fixed label shape. try fixing this to see if model trains
 
-2. Add CNN feature generation
-3. Apply custom loss function: sentence level log likelihood
-4. custom metrics to print during training
-5. Train model on kaggle data: https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus
-6. Prove performance on real dataset
+2. Add CNN feature generation (easy)
+3. Apply custom loss function: sentence level log likelihood (hard)
+4. custom metrics to print during training (easy)
+5. Train model on kaggle data: https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus (medium)
+6. Prove performance on real dataset (hard)
 
 ## Dataset
 

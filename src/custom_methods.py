@@ -137,11 +137,7 @@ class NERIter(DataIter):
         self.nddata = []
         self.ndlabel = []
         for buck in self.data:
-            # label = np.empty_like(buck)
-            # label[:, :-1] = buck[:, 1:]
-            # label[:, -1] = self.invalid_label
             self.nddata.append(ndarray.array(buck, dtype=self.dtype))
-            # self.ndlabel.append(ndarray.array(label, dtype=self.dtype))
 
         for label in self.label:
             self.ndlabel.append(ndarray.array(label, dtype=self.dtype))
