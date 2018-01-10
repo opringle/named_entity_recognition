@@ -1,31 +1,28 @@
 ## Goal
 
-[Implenting NN architecture from this paper](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
+[Implenting state of the art NN architecture from this paper](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
 
 <img src="./images/architecture.png" alt="Drawing" style="width: 300px;"/>
 
-## Datasets
+## To do
 
-#### For POC
+1. Allow variable input length: [MXNet bucketizers](https://github.com/apache/incubator-mxnet/blob/master/example/rnn/bucketing/lstm_bucketing.py).  This requires a custom data iterator.
 
-- [Download the dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+a. building correct symbol shapes, data iterator looks to be working
+b. failing as soon as a different batch size comes in
+c. mxnet examples have fixed label shape. try fixing this to see if model trains
 
-#### For performance comparison
+2. Add CNN feature generation
+3. Apply custom loss function: sentence level log likelihood
+4. custom metrics to print during training
+5. Train model on kaggle data: https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus
+6. Prove performance on real dataset
+
+## Dataset
 
 - [Download the dataset](https://www.clips.uantwerpen.be/conll2003/ner.tgz)
 - [Request access to Reuters Corpora](http://trec.nist.gov/data/reuters/reuters.html)
 - Follow the instructions in the [README](https://www.clips.uantwerpen.be/conll2003/ner/000README) to generate training files
-
-## Notes
-
-- Label shape is wrong.  Should be one hot encoded? Check what you did for CNN language model
-
-## Improvements
-
-- Vary LSTM unrolling by input size using [MXNet bucketizers](https://mxnet.incubator.apache.org/how_to/bucketing.html), instead of padding utterances
-- Add CNN feature generation
-- 
-
 
 
 

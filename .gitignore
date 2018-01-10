@@ -2,3 +2,4 @@
 *.csv
 *.pkl
 *.pyc
+/data
