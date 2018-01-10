@@ -2,8 +2,6 @@
 
 [Implenting state of the art NN architecture from this paper](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
 
-<img src="./images/architecture.png" alt="Drawing" style="width: 300px;"/>
-
 ## To do
 
 1. Allow variable input length: [MXNet bucketizers](https://github.com/apache/incubator-mxnet/blob/master/example/rnn/bucketing/lstm_bucketing.py).  This requires a custom data iterator.
