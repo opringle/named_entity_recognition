@@ -16,17 +16,6 @@ def load_obj(name):
         return pickle.load(f)
 
 
-# The interface of a data iter that works for bucketing
-#
-# DataIter
-#   - default_bucket_key: the bucket key for the default symbol.
-#
-# DataBatch
-#   - provide_data: same as DataIter, but specific to this batch
-#   - provide_label: same as DataIter, but specific to this batch
-#   - bucket_key: the key for the bucket that should be used for this batch
-
-
 class NERIter(DataIter):
     """Simple bucketing iterator for named entity recognition.
     Input features have same shape as output labels.
