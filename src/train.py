@@ -7,9 +7,13 @@ import ast
 
 #custom modules
 import config
-from custom_methods import load_obj, NERIter
+from misc_modules import load_obj
+from data_iterators import BucketNerIter
 
-#load numpy files
+######################################
+# load data 
+######################################
+
 with open("../data/x_train.txt") as f:
     x_train = f.readlines()
 x_train = [ast.literal_eval(x.strip()) for x in x_train]
@@ -33,29 +37,54 @@ y_test = y_test[:200]
 
 print("\ntraining examples: ", len(x_train), "\n\ntest examples: ", len(x_test), "\n")
 
+######################################
+# create data iterators
+######################################
+
 #create custom data iterators for training and testing
-train_iter = NERIter(data=x_train,
-                    label=y_train,
-                    batch_size=config.batch_size,
-                    buckets = config.buckets,
-                    data_name='seq_data',
-                    label_name='seq_label')
+train_iter = BucketNerIter(sentences=x_train, 
+                           entities=y_train, 
+                           batch_size=config.batch_size, 
+                           buckets = config.buckets,
+                           data_name='seq_data',
+                           label_name='seq_label')
 
-val_iter = NERIter(data=x_test,
-                    label=y_test,
-                    batch_size=config.batch_size,
-                    buckets = config.buckets,
-                    data_name='seq_data',
-                    label_name='seq_label')
+# val_iter = BucketNerIter(sentences=x_test,
+#                            entities=y_test,
+#                            batch_size=config.batch_size,
+#                            buckets=config.buckets,
+#                            data_name='seq_data',
+#                            label_name='seq_label')
 
-#print the first few input batches for a sanity check
-# for i, batch in enumerate(train_iter):
+
+# train_iter = mx.rnn.BucketSentenceIter(sentences=x_train,
+#                                        batch_size=config.batch_size,
+#                                        buckets=config.buckets,
+#                                        data_name='seq_data',
+#                                        label_name='seq_label')
+
+
+# train_iter.next()
+# val_iter.next()
+
+#show some batches to check bucket key, label and features are correct
+# print(train_iter.idx)
+# print(train_iter.idx[train_iter.curr_idx])
+# for i in list(range(3)):
+#     databatch = train_iter.next()
+#     print(databatch.data, databatch.label, databatch.provide_data, databatch.provide_label)
+
 #     if batch.bucket_key == 5:
-#         print("\nbatch ", i, " data: ", batch.data, "\nbatch ", i, " label: ", batch.label, "\nbucket size: ", batch.bucket_key)
-#         continue
+#         print("\n\nbatch ", i, " shape: ", train_iter.provide_data)
+#         print("data: ", batch.data, "\nlabel: ", batch.label, "\nbucket size: ", batch.bucket_key, )
+#         break
 # train_iter.reset()
 
-#create a bidirectional lstm cell https://mxnet.incubator.apache.org/api/python/rnn.html & http://colah.github.io/posts/2015-08-Understanding-LSTMs/
+######################################
+# create network symbol
+######################################
+
+#create a bidirectional lstm cell
 bi_cell = mx.rnn.BidirectionalCell(l_cell=mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix="forward_"),
                                        r_cell=mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix="backward_"))
 
@@ -69,6 +98,7 @@ def sym_gen(seq_len):
     #define hyperparameters from data folder
     vocab_size = len(load_obj("../data/word_index_dict"))
     num_labels = len(load_obj("../data/tag_index_dict"))
+
     input_feature_shape = (config.batch_size, seq_len)
     input_label_shape = (config.batch_size, seq_len)
 
@@ -86,7 +116,6 @@ def sym_gen(seq_len):
     bi_cell.reset()
     outputs, states = bi_cell.unroll(length=seq_len, inputs=embed_layer, merge_outputs=False, layout="NTC")
     print("\nindividual concatenated forward and backward cell shape: ", outputs[0].infer_shape(seq_data=input_feature_shape)[1][0])
-    print("\nnumber of recurrent cell unrolls: ", len(outputs))
 
     #for each timestep, add a fully connected layer with num_neurons = num_possible_tags
     step_outputs = []
@@ -94,16 +123,28 @@ def sym_gen(seq_len):
         fc = mx.sym.FullyConnected(data=step_output, num_hidden=num_labels)
         reshaped_fc = mx.sym.Reshape(data=fc, shape=(config.batch_size, num_labels, 1))
         step_outputs.append(reshaped_fc)
-    print("\nshape after each cell output passes through fully connected layer: ",
-        reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\nshape after each cell output passes through fully connected layer: ", reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\nnumber of recurrent cell unrolls: ", len(outputs))
 
     #concatenate fully connected layers for each timestep
     sm_input = mx.sym.concat(*step_outputs, dim=2)
     print("\nshape after concatenating outputs: ", sm_input.infer_shape(seq_data=input_feature_shape)[1][0])
 
+    #transpose
+    sm_input = mx.sym.transpose(sm_input, axes= (0,2,1))
+    print("\ndata shape after transposing: ", sm_input.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    #reshape the label
+    seq_label = mx.sym.Reshape(seq_label, shape=(-1, ))
+    print("\nlabel shape after reshaping: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
+
+    #reshape
+    sm_input = mx.sym.Reshape(sm_input, shape=(-1, num_labels))
+    print("\ndata shape after reshaping: ", sm_input.infer_shape(seq_data=input_feature_shape)[1][0])
+
     #apply softmax cross entropy loss to each column of each training example (shape =(num_labels, tokens))
-    sm = mx.sym.SoftmaxOutput(data=sm_input, label=seq_label, name='softmax', multi_output=True)
-    print("\nshape after loss function: ", sm.infer_shape(seq_data=input_feature_shape)[1][0])
+    sm = mx.sym.SoftmaxOutput(data=sm_input, label=seq_label, name='softmax')
+    print("\nshape after loss function: ", sm_input.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #set lstm pointer to back of network
     lstm = sm
@@ -111,8 +152,48 @@ def sym_gen(seq_len):
     return lstm, ('seq_data',), ('seq_label',)
 
 
+######################
+# testing this
+######################
+
+stack = mx.rnn.SequentialRNNCell()
+for i in range(1):
+    stack.add(mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix='lstm_l%d_' %i))
+
+vocab_size = len(load_obj("../data/word_index_dict"))
+
+def sym_gen2(seq_len):
+    
+    print("-" * 50)
+    input_feature_shape = (config.batch_size, seq_len)
+    input_label_shape = (config.batch_size, seq_len)
+
+    seq_data = mx.sym.Variable('seq_data')
+    seq_label = mx.sym.Variable('seq_label')
+    embed = mx.sym.Embedding(data=seq_data, input_dim=vocab_size,output_dim=config.word_embedding_vector_length, name='embed')
+    print("\nembedding layer shape: ", embed.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    stack.reset()
+    outputs, states = stack.unroll(seq_len, inputs=embed, merge_outputs=True)
+    print("\nrnn layer shape: ", outputs.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    pred = mx.sym.Reshape(outputs, shape=(-1, config.lstm_state_size))
+    print("\nafter reshaping: ", pred.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    pred = mx.sym.FullyConnected( data=pred, num_hidden=vocab_size, name='pred')
+    print("\nafter fully connect layer : ", pred.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    seq_label = mx.sym.Reshape(seq_label, shape=(-1,))
+    print("\nlabel reshaping: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
+
+    pred = mx.sym.SoftmaxOutput(data=pred, label=seq_label, name='softmax')
+    print("\nsoftmax layer shape: ", pred.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
+
+    return pred, ('seq_data',), ('seq_label',)
+
+
 # create a trainable bucketing module
-model = mx.mod.BucketingModule(sym_gen=sym_gen, 
+model = mx.mod.BucketingModule(sym_gen=sym_gen2, 
                                default_bucket_key=train_iter.default_bucket_key, 
                                context = config.context)
 
@@ -123,10 +204,10 @@ model = mx.mod.BucketingModule(sym_gen=sym_gen,
 
 model.fit(
     train_data=train_iter,
-    eval_data=val_iter,
-    eval_metric='accuracy',
-    optimizer='sgd',
-    optimizer_params={"learning_rate": config.learning_rate},
+    eval_metric=mx.metric.Perplexity(-1),
+    optimizer='Adam',
+    optimizer_params={'learning_rate': config.learning_rate},
+    initializer=mx.init.Xavier(factor_type="in", magnitude=2.34),
     num_epoch=config.num_epoch)
 
 
@@ -160,4 +241,4 @@ model.fit(
 # predict to check shape
 ########################
 
-print("\nmodel predictions are of shape: ", model.predict(val_iter).shape)
+#print("\nmodel predictions are of shape: ", model.predict(val_iter).shape)

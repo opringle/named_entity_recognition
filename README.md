@@ -6,15 +6,9 @@
 
 1. Allow variable input length: [MXNet bucketizers](https://github.com/apache/incubator-mxnet/blob/master/example/rnn/bucketing/lstm_bucketing.py).  This requires a custom data iterator.
 
-a. building correct symbol shapes, data iterator looks to be working
-
-b. failing as soon as a different batch size comes in
-
-c. mxnet examples have fixed label shape. try fixing this to see if model trains
-
-d. similar to my issue: https://github.com/apache/incubator-mxnet/issues/8663
-
-e. try creating a mwe
+- iterator works :)
+- gen_sym does not work
+    - try merging outputs when unrolling...
 
 2. Add CNN feature generation (easy)
 3. Apply custom loss function: sentence level log likelihood (hard)
