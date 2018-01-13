@@ -10,7 +10,7 @@ from mxnet import ndarray
 class BucketNerIter(DataIter):
     """This iterator can handle variable length feature/label arrays for MXNet RNN classifiers"""
 
-    def __init__(self, sentences, entities, batch_size, buckets=None, invalid_label=-1,
+    def __init__(self, sentences, entities, batch_size, buckets=None, data_pad=-1, label_pad = -1,
                  data_name='data', label_name='softmax_label', dtype='float32',
                  layout='NT'):
 
@@ -20,6 +20,9 @@ class BucketNerIter(DataIter):
         if not buckets:
             buckets = [i for i, j in enumerate(np.bincount([len(s) for s in sentences])) if j >= batch_size]
         buckets.sort()
+        
+        #make sure buckets have been defined
+        assert (len(buckets) > 0), "no buckets could be created"
 
         ndiscard = 0
 
@@ -35,8 +38,8 @@ class BucketNerIter(DataIter):
             if buck == len(buckets):
                 ndiscard += 1
                 continue
-            #create an array of shape (bucket_size,) filled with 'invalid_label'
-            buff = np.full((buckets[buck],), invalid_label, dtype=dtype)
+            #create an array of shape (bucket_size,) filled with 'data_pad'
+            buff = np.full((buckets[buck],), data_pad, dtype=dtype)
             #replace elements up to the sentence length with actual values
             # eg. sent length=8, bucket size=10: [1,3,4,5,6,3,8,7,-1,-1]
             buff[:len(tokenized_sentence)] = tokenized_sentence
@@ -57,8 +60,8 @@ class BucketNerIter(DataIter):
             if buck == len(buckets):
                 ndiscard += 1
                 continue
-            #create an array of shape (bucket_size,) filled with 'invalid_label'
-            buff = np.full((buckets[buck],), invalid_label, dtype=dtype)
+            #create an array of shape (bucket_size,) filled with 'label_pad'
+            buff = np.full((buckets[buck],), label_pad, dtype=dtype)
             #replace elements up to the sentence length with actual values
             # eg. sent length=8, bucket size=10: [1,3,4,5,6,3,8,7,-1,-1]
             buff[:len(entity_list)] = entity_list
@@ -75,7 +78,8 @@ class BucketNerIter(DataIter):
         self.data_name = data_name
         self.label_name = label_name
         self.dtype = dtype
-        self.invalid_label = invalid_label
+        self.data_pad = data_pad
+        self.label_pad = label_pad
         self.nddata = []
         self.ndlabel = []
         self.major_axis = layout.find('N')

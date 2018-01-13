@@ -4,26 +4,22 @@
 
 ## To do
 
-1. Allow variable input length: [MXNet bucketizers](https://github.com/apache/incubator-mxnet/blob/master/example/rnn/bucketing/lstm_bucketing.py).  This requires a custom data iterator.
+- CNN feature generation/preprocessing
+- Custom loss function: sentence level log likelihood (use ignore is potentially sufficient...)
 
-- iterator works :)
-- gen_sym does not work
-    - try merging outputs when unrolling...
+[custom softmax allowing weighted labels](https://github.com/apache/incubator-mxnet/blob/v1.0.0/example/sparse/weighted_softmax_ce.py)
+[gluon loss function example](http://gluon.mxnet.io/chapter05_recurrent-neural-networks/rnns-gluon.html)
 
-2. Add CNN feature generation (easy)
-3. Apply custom loss function: sentence level log likelihood (hard)
-
-- http://gluon.mxnet.io/chapter05_recurrent-neural-networks/rnns-gluon.html
-
-4. custom metrics to print during training (easy)
-5. Train model on kaggle data: https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus (medium)
-6. Prove performance on real dataset (hard)
+- Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+- Prove performance on real dataset after requesting access
 
 ## Dataset
 
 - [Download the dataset](https://www.clips.uantwerpen.be/conll2003/ner.tgz)
 - [Request access to Reuters Corpora](http://trec.nist.gov/data/reuters/reuters.html)
 - Follow the instructions in the [README](https://www.clips.uantwerpen.be/conll2003/ner/000README) to generate training files
+
+## [State of the art](https://aclweb.org/aclwiki/CONLL-2003_(State_of_the_art))
 
 
 
