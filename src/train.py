@@ -1,4 +1,5 @@
 #modules
+from collections import Counter
 import mxnet as mx
 import numpy as np
 import sys
@@ -36,17 +37,22 @@ x_test = x_test[:config.max_val_examples]
 y_train = y_train[:config.max_training_examples]
 y_test = y_test[:config.max_val_examples]
 
-print("\ntraining examples: ", len(x_train), "\n\ntest examples: ", len(x_test), "\n")
+print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test))
+
+#get index integer for "not entity"
+not_entity_index = load_obj("../data/tag_index_dict")["O"]
+
+#get counts for entities in data
+train_entity_counts = Counter(entity for sublist in y_train for entity in sublist)
+val_entity_counts = Counter(entity for sublist in y_test for entity in sublist)
+print("\nentites in training data: ", sum(train_entity_counts.values()) - train_entity_counts[not_entity_index], "/", sum(train_entity_counts.values()))
+print("entites in validation data: ", sum(val_entity_counts.values()) - val_entity_counts[not_entity_index], "/", sum(val_entity_counts.values()),"\n")
 
 ######################################
 # create custom data iterators
 ######################################
 
-# iterators will pad sentences and entity arrays to the bucket size
 # we want padding to use "not entity" index in labels
-not_entity_index = load_obj("../data/tag_index_dict")["O"]
-print(not_entity_index)
-
 train_iter = BucketNerIter(sentences=x_train, 
                            entities=y_train, 
                            batch_size=config.batch_size, 
@@ -127,17 +133,16 @@ def sym_gen(seq_len):
     print("\nnumber of recurrent cell unrolls: ", len(outputs))
 
     #concatenate fully connected layers for each timestep
-    sm_input = mx.sym.concat(*step_outputs, dim=2, name = 'fc_outputs')
-    print("\nshape after concatenating outputs: ", sm_input.infer_shape(seq_data=input_feature_shape)[1][0])
+    loss_input = mx.sym.concat(*step_outputs, dim=2, name = 'fc_outputs')
+    print("\nshape after concatenating outputs: ", loss_input.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    #apply softmax cross entropy loss, preventing the gradient being computed with respect to not entity label
-    sm = mx.sym.SoftmaxOutput(data=sm_input, label=seq_label, multi_output = True, name='softmax', ignore_label = not_entity_index, use_ignore = True)
-    print("\nshape after loss function: ", sm_input.infer_shape(seq_data=input_feature_shape)[1][0])
+    loss_grad = mx.sym.SoftmaxOutput(data=loss_input, label=seq_label, multi_output = True, name='softmax', ignore_label = not_entity_index, use_ignore = True)
+    print("\nmodel output shape: ", loss_grad.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #set lstm pointer to back of network (OCD thing)
-    lstm = sm
+    network = loss_grad
 
-    return lstm, ('seq_data',), ('seq_label',)
+    return network, ('seq_data',), ('seq_label',)
 
 
 #####################################
