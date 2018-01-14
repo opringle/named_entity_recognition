@@ -4,23 +4,25 @@
 
 ## To do
 
-- Find a way to weight not entity class with less importance to handle imbalance
+1. get metrics working with a custom loss layer: extract intermediate symbol and build module with it for prediction with bucketing
 
-apply softmax function to network output
-multiply loss for "not entity" by some constant
-use mx.ndrray.one_hot on labels
-compute loss between labels and predicted probabilities
-use makeloss symbol
-somehow obtain the predictions from previous symbols
+    - try without bucketing first
 
-- Custom loss function: sentence level log likelihood (use ignore is potentially sufficient...)
+2. modify custom loss layer
 
-[custom softmax allowing weighted labels](https://github.com/apache/incubator-mxnet/blob/v1.0.0/example/sparse/weighted_softmax_ce.py)
-[gluon loss function example](http://gluon.mxnet.io/chapter05_recurrent-neural-networks/rnns-gluon.html)
+    -  weight each label differently
+    - if not sufficient look into sentence level log-liklihood
 
-- CNN feature generation/preprocessing
-- Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
-- Prove performance on real dataset after requesting access
+3. add CNN feature generation
+
+    - modify input data (ideally still 1 data source)
+
+4. add more features
+
+    - spacy provides dependency, postag, shape, capitalization features
+
+5. Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+6. Prove performance on real dataset after requesting access
 
 ## Dataset
 
