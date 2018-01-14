@@ -5,6 +5,14 @@
 ## To do
 
 - Find a way to weight not entity class with less importance to handle imbalance
+
+apply softmax function to network output
+multiply loss for "not entity" by some constant
+use mx.ndrray.one_hot on labels
+compute loss between labels and predicted probabilities
+use makeloss symbol
+somehow obtain the predictions from previous symbols
+
 - Custom loss function: sentence level log likelihood (use ignore is potentially sufficient...)
 
 [custom softmax allowing weighted labels](https://github.com/apache/incubator-mxnet/blob/v1.0.0/example/sparse/weighted_softmax_ce.py)
