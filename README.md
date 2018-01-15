@@ -6,12 +6,14 @@
 
 1. get metrics working with a custom loss layer: extract intermediate symbol and build module with it for prediction with bucketing
 
-    - try without bucketing first
+    - get working with bucketing
+    - try to use mxnet metric_update instead of hack
 
 2. modify custom loss layer
 
     -  weight each label differently
     - if not sufficient look into sentence level log-liklihood
+    - could split data into not entity preds and entity preds, compute loss on each and scale differently
 
 3. add CNN feature generation
 

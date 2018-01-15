@@ -51,10 +51,11 @@ def entity_F1_score(label, pred):
 
 def cust_acc(label, pred):
 
+    label = label.astype(int)
     prediction = np.argmax(pred, axis=1)
-    print(label[0])
-    print(prediction[0])
-    print(label[0] == prediction[0])
+
+    print("\nlabel example: \n", label[0])
+    print("\nprediction example: \n", prediction[0])
 
     return np.mean(prediction == label)
 
