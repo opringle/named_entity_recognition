@@ -11,7 +11,8 @@
 
 2. modify custom loss layer
 
-    -  weight each label differently
+    - print correct loss while training: make a custom loss metric to use with pred module
+    -  loss does not increase when model suddenly decides to predict all not entity
     - if not sufficient look into sentence level log-liklihood
     - could split data into not entity preds and entity preds, compute loss on each and scale differently
 

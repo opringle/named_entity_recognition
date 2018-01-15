@@ -47,6 +47,8 @@ def entity_F1_score(label, pred):
     if precision == 0 or recall ==0:
          f1 = 0.0
 
+    print("\nprecision: ", precision, "\nrecall: ", recall)
+
     return f1
 
 def cust_acc(label, pred):

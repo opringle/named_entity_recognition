@@ -243,13 +243,14 @@ for epoch in range(config.num_epoch):
         model.forward(batch, is_train=True)       # compute predictions
         model.backward()                          # compute gradients
         model.update()                            # update parameters
-    #print('Epoch %d, Training %s' % (epoch, metric.get()))
+        model.update_metric(metric, batch.label)   # accumulate metric scores
+    print('Epoch %d, Training %s' % (epoch, metric.get()))
 
     model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model
     train_pred = model_pred.predict(train_iter).asnumpy()
     train_label = train_iter.label[0]  # list of list of int
 
-    print("\nEpoch %d, Training f1-score: %s, accuracy: %s" % (epoch, entity_F1_score(train_label, train_pred), cust_acc(train_label, train_pred)))
+    print("\nEpoch %d, Training accuracy: %s, f1-score: %s" % (epoch, cust_acc(train_label, train_pred)), entity_F1_score(train_label, train_pred))
 
     metric.reset()
 
