@@ -22,4 +22,4 @@ optimizer = 'sgd' #choose algorith for initializing and updating weights
 optimizer_params = {"learning_rate": 0.00105, "wd" : 0}
 
 #rescaling the loss TODO: not working
-not_entity_loss_scale = 0.000000000000000000001
+not_entity_loss_scale = 1
