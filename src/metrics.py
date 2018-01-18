@@ -23,7 +23,7 @@ def classifer_metrics(label, pred):
     label_is_entity = label != not_entity_index
 
     #is the prediction correct?
-    corr_pred = prediction == label
+    corr_pred = (prediction == label) == (pred_is_entity == True)
 
     #how many entities are there?
     num_entities = np.sum(label_is_entity)
