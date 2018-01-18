@@ -8,7 +8,7 @@ from misc_modules import load_obj
 tag_dict = load_obj("../data/tag_index_dict")
 outside_tag_index = tag_dict["O"]
 
-def entity_F1_score(label, pred):
+def classifer_metrics(label, pred):
     """computes the F1 score
     F = 2 * Precision * Recall / (Recall + Precision)"""
 
@@ -45,33 +45,36 @@ def entity_F1_score(label, pred):
     #f1 score combines the two 
     f1 = 2 * precision * recall / (precision + recall)
 
-    #print("\nprecision: ", precision, "\nrecall: ", recall)
+    return precision, recall, f1
 
-    return f1
+def entity_precision(label, pred):
+    return classifer_metrics(label, pred)[0]
 
-def cust_acc(label, pred):
+def entity_recall(label, pred):
+    return classifer_metrics(label, pred)[1]
 
-    label = label.astype(int)
-    prediction = np.argmax(pred, axis=1)
+def entity_f1(label, pred):
+    return classifer_metrics(label, pred)[2]
 
-    print("\nlabel example: \n", label[0])
-    print("\nprediction example: \n", prediction[0])
+def composite_classifier_metrics():
 
-    return np.mean(prediction == label)
+    metric1 = mx.metric.CustomMetric(feval=entity_precision,
+                           name='precision',
+                           output_names=['softmax_output'],
+                           label_names=['seq_label'])
 
-def cust_loss(label, pred):
+    metric2 = mx.metric.CustomMetric(feval=entity_recall,
+                           name='recall',
+                           output_names=['softmax_output'],
+                           label_names=['seq_label'])   
+    metric3 = mx.metric.CustomMetric(feval=entity_f1,
+                           name='f1 score',
+                           output_names=['softmax_output'],
+                           label_names=['seq_label'])
 
-    nb_classes = pred.shape[1]
+    metrics = [metric1, metric2, metric3]
 
-    # one hot encode label
-    label = np.eye(nb_classes)[label.astype(int)]
-    label = label.transpose((0,2,1))
+    return mx.metric.CompositeEvalMetric(metrics)
 
-    # print(pred.shape, label.shape)
-    # print(pred[0], label[0])
-
-    loss = (label - pred)**2
-
-    return np.sum(loss)
-
-
+def accuracy(label, pred):
+    return np.mean(label == np.argmax(pred, 1))

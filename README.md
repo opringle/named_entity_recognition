@@ -8,27 +8,25 @@
 
 ## To do
 
-1. get metrics working with a custom loss layer: extract intermediate symbol and build module with it for prediction with bucketing
-
-    - need to use custom metric where i can set output to use for predictions :)
-
+1. train without label weighting to high accuracy
 2. modify custom loss layer
 
-    - print correct loss while training: make a custom loss metric to use with pred module and ensure loss rises when model only predicts entity
-    - if not sufficient look into sentence level log-liklihood
-    - could split data into not entity preds and entity preds, compute loss on each and scale differently
+    - get block grad working/make sure you can scale entity prediction losses
+    - look into sentence level log-liklihood
 
-3. add CNN feature generation
+3. modify metric to measure per class precision and recall
+4. add CNN feature generation
 
     - modify input data (ideally still 1 data source)
 
-4. add more features
+5. add more features
 
     - spacy provides dependency, postag, shape, capitalization features
     - ensure mxnet embedding is doing what you think. we want context for vector initialization
 
-5. Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
-6. Prove performance on real dataset after requesting access
+6. Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+7. Prove performance on real dataset after requesting access
+8. get prediction symbol working with bucketing.... needs to be a bucketing module!
 
 ## Dataset
 

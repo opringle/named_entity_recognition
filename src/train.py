@@ -10,7 +10,7 @@ import ast
 import config
 from misc_modules import load_obj
 from data_iterators import BucketNerIter
-from metrics import entity_F1_score, cust_acc, cust_loss
+from metrics import composite_classifier_metrics
 
 ######################################
 # load data 
@@ -32,10 +32,13 @@ with open("../data/y_test.txt") as f:
     y_test = f.readlines()
 y_test = [ast.literal_eval(x.strip()) for x in y_test]
 
-x_train = x_train[:config.max_training_examples]
-x_test = x_test[:config.max_val_examples]
-y_train = y_train[:config.max_training_examples]
-y_test = y_test[:config.max_val_examples]
+if config.max_training_examples:
+    x_train = x_train[:config.max_training_examples]
+    y_train = y_train[:config.max_training_examples]
+
+if config.max_val_examples:
+    x_test = x_test[:config.max_val_examples]
+    y_test = y_test[:config.max_val_examples]
 
 print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test))
 
@@ -200,8 +203,8 @@ def sym_gen(seq_len):
     loss_grad = mx.sym.make_loss(loss)
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
-    #name the network
-    network = loss_grad
+    #finally create a symbol group consisting of both the model output and the softmax layer output
+    network = mx.sym.Group([softmax_output, loss_grad])
 
     return network, ('seq_data',), ('seq_label',)
 
@@ -223,11 +226,8 @@ model.init_params(initializer=mx.init.Uniform(scale=.1))
 # use SGD with learning rate 0.1 to train
 model.init_optimizer(optimizer=config.optimizer, optimizer_params=config.optimizer_params)
 
-#define a custom metric, which takes the output from an internal layer
-metric = mx.metric.CustomMetric(feval=entity_F1_score,
-                                name='f1 score metric',
-                                output_names=['softmax_pred_output'],
-                                label_names=['seq_label'])
+#define a custom metric, which takes the output from an internal layer and calculates precision, recall and f1 score
+metric = composite_classifier_metrics()
 
 ####################################
 # fit the model to the training data
@@ -257,27 +257,27 @@ for epoch in range(config.num_epoch):
         model.update_metric(metric, batch.label)   # accumulate metric scores
     print('Epoch %d, Validation %s' % (epoch, metric.get()))
 
-#########################################
-# create a separate module for predicting
-#########################################
+# #########################################
+# # create a separate module for predicting
+# #########################################
 
-#TODO: pred shape is not reliable when batch size not a multiple of number of training examples
+# #TODO: pred shape is not reliable when batch size not a multiple of number of training examples
 
-# because we are designing our own loss function, the model output symbol now returns the gradient of the loss with respect to the input data
-# to deal with this we need to create a separate module for prediction, that takes the output from an intermediate symbol
+# # because we are designing our own loss function, the model output symbol now returns the gradient of the loss with respect to the input data
+# # to deal with this we need to create a separate module for prediction, that takes the output from an intermediate symbol
 
-internal_symbols = model.symbol.get_internals()  # get all internal symbols
-softmax_sym_index = internal_symbols.list_outputs().index('softmax_pred_output')  # find the index of the softmax prediction output layer
-prediction_symbol = internal_symbols[softmax_sym_index] # retrive softmax pred symbol
+# internal_symbols = model.symbol.get_internals()  # get all internal symbols
+# softmax_sym_index = internal_symbols.list_outputs().index('softmax_pred_output')  # find the index of the softmax prediction output layer
+# prediction_symbol = internal_symbols[softmax_sym_index] # retrive softmax pred symbol
 
-# create module from internal symbol
-model_pred = mx.mod.Module(symbol=prediction_symbol,data_names=('seq_data',), label_names=None)
+# # create module from internal symbol
+# model_pred = mx.mod.Module(symbol=prediction_symbol,data_names=('seq_data',), label_names=None)
 
-# allocate memory given the input data and label shapes
-model_pred.bind(data_shapes=train_iter.provide_data, label_shapes = None)
+# # allocate memory given the input data and label shapes
+# model_pred.bind(data_shapes=train_iter.provide_data, label_shapes = None)
 
-# initialize parameters by uniform random numbers
-model_pred.init_params(initializer=mx.init.Uniform(scale=.1))
+# # initialize parameters by uniform random numbers
+# model_pred.init_params(initializer=mx.init.Uniform(scale=.1))
 
-#set the parameters of the prediction module to the learned values
-model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model
+# #set the parameters of the prediction module to the learned values
+# model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model
