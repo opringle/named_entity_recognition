@@ -10,7 +10,7 @@ import ast
 import config
 from misc_modules import load_obj
 from data_iterators import BucketNerIter
-from metrics import entity_F1_score, cust_acc
+from metrics import entity_F1_score, cust_acc, cust_loss
 
 ######################################
 # load data 
@@ -68,11 +68,41 @@ train_iter = BucketNerIter(sentences=x_train,
 val_iter = BucketNerIter(sentences=x_test,
                            entities=y_test,
                            batch_size=config.batch_size,
-                           buckets=config.buckets,
+                           buckets=train_iter.buckets,
                            data_name='seq_data',
                            label_name='seq_label',
                            label_pad=not_entity_index,
                            data_pad=-1)
+
+######################################################
+# ensure sentences are matched with entities correctly
+######################################################
+
+# #load in dict mapping indices back to words
+# word_to_index = load_obj("../data/word_index_dict")
+# index_to_word = dict([(v, k) for k, v in word_to_index.items()])
+# tag_to_index = load_obj("../data/tag_index_dict")
+# index_to_tag = dict([(v, k) for k, v in tag_to_index.items()])
+
+# train_iter.reset()
+# for i, batch in enumerate(train_iter):
+#     if i == 1:
+#         data = batch.data[0].asnumpy().tolist()
+#         labels = batch.label[0].asnumpy().tolist()
+
+#         #map dict to index values to reproduce sentences
+#         sentences_train = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
+#         sentences_test = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
+#         tags_train = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
+#         tags_test = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
+
+        # for i, sentence in enumerate(sentences_train):
+        #     if i < 3:
+        #         print("\nsentence>tag mapping: %d" % (i))
+        #         for j in list(range(len(sentence))):
+        #             print("\ntoken: ", sentences_train[i][j], "\ntag: ", tags_train[i][j])
+
+train_iter.reset()
 
 #######################
 # create network symbol
@@ -140,42 +170,34 @@ def sym_gen(seq_len):
     loss_input = mx.sym.concat(*step_outputs, dim=2, name = 'fc_outputs')
     print("\nshape after concatenating outputs: ", loss_input.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    ##############
-    # custom loss
-    ##############
-
     #apply softmax function to network output
     sm = mx.sym.softmax(data = loss_input, axis = 1, name = 'softmax_pred')
     print("\nshape after applying softmax to data: ", sm.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    softmax_output = mx.sym.BlockGrad(data = sm,name = 'softmax')
+
+    #scale predicted probability output for not entity predictions and block gradient
+    ent_sm1 = mx.sym.slice_axis(data=sm, axis=1, begin=0, end=15)
+    not_entity_sm = mx.sym.slice_axis(data=sm, axis=1, begin=15, end=16)*config.not_entity_loss_scale
+    ent_sm2 = mx.sym.slice_axis(data=sm, axis=1, begin=16, end=17)
+    output = mx.sym.concat(*[ent_sm1, not_entity_sm, ent_sm2], dim=1, name='entity_loss')
+    print("\nrescaled softmax shape: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #one hot encode label input
     one_hot_labels = mx.sym.one_hot(indices = seq_label, depth = num_labels, name = 'one_hot_labels')
     print("\nonehot label shape: ", one_hot_labels.infer_shape(seq_label=input_label_shape)[1][0])
 
     #transpose to match network output
-    transposed_one_hot_labels = mx.sym.transpose(data=one_hot_labels, axes=(0,2,1), name = 'transposed_labels')
-    print("\ntransposed onehot label shape: ", one_hot_labels.infer_shape(seq_label=input_label_shape)[1][0])
+    label = mx.sym.transpose(data=one_hot_labels, axes=(0,2,1), name = 'transposed_labels')
+    print("\ntransposed onehot label shape: ", label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #compute the squared error between predicted probability and labels
-    loss = (sm - transposed_one_hot_labels)**2
-    print("\nloss shape: ", loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
-
-    #get loss for entity predictions
-    ent_loss1 = mx.sym.slice_axis(data = loss, axis = 1, begin = 0, end = 15)
-    ent_loss2 = mx.sym.slice_axis(data = loss, axis = 1, begin = 16, end = 17)
-    ent_loss = mx.sym.concat(*[ent_loss1, ent_loss2], dim = 1, name = 'entity_loss') * config.entity_loss_scale
-    print("\nentity loss shape: ", ent_loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
-
-    #get loss for not-entity predictions and scale it
-    not_ent_loss = mx.sym.slice_axis(data = loss, axis = 1, begin = 15, end = 16) * config.not_entity_loss_scale
-    print("\nnot-entity loss shape: ", not_ent_loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
-
-    #combine losses
-    combined_loss = mx.sym.concat(*[ent_loss,not_ent_loss], dim = 1, name = "combined loss")
-    print("\nre-combined loss shape: ", combined_loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
+    #compute the cross entropy loss
+    #output = entity_sm
+    loss = -((label * mx.sym.log(output)) + ((1 - label) * mx.sym.log(1 - output)))
+    print("\ncross entropy loss shape: ", loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #final loss grad
-    loss_grad = mx.sym.make_loss(combined_loss)
+    loss_grad = mx.sym.make_loss(loss)
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #name the network
@@ -188,7 +210,7 @@ def sym_gen(seq_len):
 # create a trainable bucketing module
 #####################################
 
-model = mx.mod.BucketingModule(sym_gen=sym_gen, 
+model = mx.mod.BucketingModule(sym_gen= sym_gen, 
                                default_bucket_key=train_iter.default_bucket_key, 
                                context = config.context)
 
@@ -201,31 +223,11 @@ model.init_params(initializer=mx.init.Uniform(scale=.1))
 # use SGD with learning rate 0.1 to train
 model.init_optimizer(optimizer=config.optimizer, optimizer_params=config.optimizer_params)
 
-# choose a metric to print while training
-metric = mx.metric.CompositeEvalMetric([mx.metric.create('loss')])
-
-#########################################
-# create a separate module for predicting
-#########################################
-
-#TODO: pred shape is not reliable when batch size not a multiple of number of training examples
-#TODO: variable bucket size breaks my code for predicting
-
-# because we are designing our own loss function, the model output symbol now returns the gradient of the loss with respect to the input data
-# to deal with this we need to create a separate module for prediction, that takes the output from an intermediate symbol
-
-internal_symbols = model.symbol.get_internals()  # get all internal symbols
-softmax_sym_index = internal_symbols.list_outputs().index('softmax_pred_output')  # find the index of the softmax prediction output layer
-prediction_symbol = internal_symbols[softmax_sym_index] # retrive softmax pred symbol
-
-# create module from internal symbol
-model_pred = mx.mod.Module(symbol=prediction_symbol,data_names=('seq_data', ), label_names=None)
-
-# allocate memory given the input data and label shapes
-model_pred.bind(data_shapes=train_iter.provide_data, label_shapes=None)
-
-# initialize parameters by uniform random numbers
-model_pred.init_params(initializer=mx.init.Uniform(scale=.1))
+#define a custom metric, which takes the output from an internal layer
+metric = mx.metric.CustomMetric(feval=entity_F1_score,
+                                name='f1 score metric',
+                                output_names=['softmax_pred_output'],
+                                label_names=['seq_label'])
 
 ####################################
 # fit the model to the training data
@@ -239,18 +241,13 @@ for epoch in range(config.num_epoch):
     metric.reset()
 
     for batch in train_iter:
+
         bucket = batch.bucket_key                 #get the seq length
         model.forward(batch, is_train=True)       # compute predictions
         model.backward()                          # compute gradients
         model.update()                            # update parameters
-        model.update_metric(metric, batch.label)   # accumulate metric scores
-    print('Epoch %d, Training %s' % (epoch, metric.get()))
-
-    model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model
-    train_pred = model_pred.predict(train_iter).asnumpy()
-    train_label = train_iter.label[0]  # list of list of int
-
-    print("\nEpoch %d, Training accuracy: %s, f1-score: %s" % (epoch, cust_acc(train_label, train_pred)), entity_F1_score(train_label, train_pred))
+        model.update_metric(metric, batch.label)  # accumulate metric scores on prediction module
+    print('\nEpoch %d, Training %s' % (epoch, metric.get()))
 
     metric.reset()
 
@@ -258,9 +255,29 @@ for epoch in range(config.num_epoch):
         bucket = batch.bucket_key
         model.forward(batch, is_train=False)       # compute predictions
         model.update_metric(metric, batch.label)   # accumulate metric scores
-    #print('Epoch %d, Validation %s' % (epoch, metric.get()))
+    print('Epoch %d, Validation %s' % (epoch, metric.get()))
 
-    val_pred = model_pred.predict(val_iter).asnumpy()
-    val_label = val_iter.label[0]  # list of list of int
+#########################################
+# create a separate module for predicting
+#########################################
 
-    #print("Epoch %d, Validation f1-score: %s, accuracy: %s" % (epoch, entity_F1_score(val_label, val_pred), cust_acc(val_label, val_pred)))
+#TODO: pred shape is not reliable when batch size not a multiple of number of training examples
+
+# because we are designing our own loss function, the model output symbol now returns the gradient of the loss with respect to the input data
+# to deal with this we need to create a separate module for prediction, that takes the output from an intermediate symbol
+
+internal_symbols = model.symbol.get_internals()  # get all internal symbols
+softmax_sym_index = internal_symbols.list_outputs().index('softmax_pred_output')  # find the index of the softmax prediction output layer
+prediction_symbol = internal_symbols[softmax_sym_index] # retrive softmax pred symbol
+
+# create module from internal symbol
+model_pred = mx.mod.Module(symbol=prediction_symbol,data_names=('seq_data',), label_names=None)
+
+# allocate memory given the input data and label shapes
+model_pred.bind(data_shapes=train_iter.provide_data, label_shapes = None)
+
+# initialize parameters by uniform random numbers
+model_pred.init_params(initializer=mx.init.Uniform(scale=.1))
+
+#set the parameters of the prediction module to the learned values
+model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model

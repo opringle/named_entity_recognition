@@ -23,7 +23,7 @@ def entity_F1_score(label, pred):
     label_is_entity = label != not_entity_index
 
     #is the prediction correct?
-    corr_pred = np.argmax(pred, axis=1) == label
+    corr_pred = prediction == label
 
     #how many entities are there?
     num_entities = np.sum(label_is_entity)
@@ -35,19 +35,17 @@ def entity_F1_score(label, pred):
     #precision: when we predict entity, how often are we right?
     precision = correct_entitites/entity_preds
     if entity_preds == 0:
-        precision = 1.0
+        precision = np.nan
 
     #recall: of the things that were an entity, how many did we catch?
     recall = correct_entitites / num_entities
     if num_entities == 0:
-        recall = 0.0
+        recall = np.nan
 
     #f1 score combines the two 
     f1 = 2 * precision * recall / (precision + recall)
-    if precision == 0 or recall ==0:
-         f1 = 0.0
 
-    print("\nprecision: ", precision, "\nrecall: ", recall)
+    #print("\nprecision: ", precision, "\nrecall: ", recall)
 
     return f1
 
@@ -60,4 +58,20 @@ def cust_acc(label, pred):
     print("\nprediction example: \n", prediction[0])
 
     return np.mean(prediction == label)
+
+def cust_loss(label, pred):
+
+    nb_classes = pred.shape[1]
+
+    # one hot encode label
+    label = np.eye(nb_classes)[label.astype(int)]
+    label = label.transpose((0,2,1))
+
+    # print(pred.shape, label.shape)
+    # print(pred[0], label[0])
+
+    loss = (label - pred)**2
+
+    return np.sum(loss)
+
 

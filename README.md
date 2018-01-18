@@ -2,17 +2,19 @@
 
 [Implenting state of the art NN architecture from this paper](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
 
+## Notes
+
+- without bucketing we significantly increase the imbalance in the dataset, since we tag as "not entity"
+
 ## To do
 
 1. get metrics working with a custom loss layer: extract intermediate symbol and build module with it for prediction with bucketing
 
-    - get working with bucketing
-    - try to use mxnet metric_update instead of hack
+    - need to use custom metric where i can set output to use for predictions :)
 
 2. modify custom loss layer
 
-    - print correct loss while training: make a custom loss metric to use with pred module
-    -  loss does not increase when model suddenly decides to predict all not entity
+    - print correct loss while training: make a custom loss metric to use with pred module and ensure loss rises when model only predicts entity
     - if not sufficient look into sentence level log-liklihood
     - could split data into not entity preds and entity preds, compute loss on each and scale differently
 
@@ -23,6 +25,7 @@
 4. add more features
 
     - spacy provides dependency, postag, shape, capitalization features
+    - ensure mxnet embedding is doing what you think. we want context for vector initialization
 
 5. Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
 6. Prove performance on real dataset after requesting access
@@ -36,7 +39,7 @@
 ## [State of the art](https://aclweb.org/aclwiki/CONLL-2003_(State_of_the_art))
 
 
-## What's good about this tutorial
+## Benefits
 
 - demonstrates convolutional layers for feature extraction, recurrent layers allowing variable length inputs, custom classification metrics to show meaningful scores on imbalanced data, custom loss functions to handle imbalanced labels
 

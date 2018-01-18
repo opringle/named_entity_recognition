@@ -4,6 +4,7 @@ import random
 import numpy as np
 from mxnet.io import DataIter, DataBatch, DataDesc
 from mxnet import ndarray
+from sklearn.utils import shuffle
 
 
 #TODO: #provide data and provide label not reactive!
@@ -20,9 +21,13 @@ class BucketNerIter(DataIter):
         if not buckets:
             buckets = [i for i, j in enumerate(np.bincount([len(s) for s in sentences])) if j >= batch_size]
         buckets.sort()
+        # thing = np.bincount([len(s) for s in sentences])
+        # print("\nindex and length counts: \n", 
+        #     [index for index, len_count in enumerate(thing)], 
+        #     [len_count for index, len_count in enumerate(thing)])
         
         #make sure buckets have been defined
-        assert (len(buckets) > 0), "no buckets could be created"
+        assert (len(buckets) > 0), "no buckets could be created, not enough utterances of a certain length to create a bucket"
 
         ndiscard = 0
 
@@ -116,8 +121,8 @@ class BucketNerIter(DataIter):
         self.curr_idx = 0
         #shuffle data in each bucket
         random.shuffle(self.idx)
-        for buck in self.data:
-            np.random.shuffle(buck)
+        for i, buck in enumerate(self.data):
+            self.data[i], self.label[i] = shuffle(self.data[i], self.label[i])
 
         self.nddata = []
         self.ndlabel = []
