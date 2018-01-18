@@ -77,36 +77,6 @@ val_iter = BucketNerIter(sentences=x_test,
                            label_pad=not_entity_index,
                            data_pad=-1)
 
-######################################################
-# ensure sentences are matched with entities correctly
-######################################################
-
-# #load in dict mapping indices back to words
-# word_to_index = load_obj("../data/word_index_dict")
-# index_to_word = dict([(v, k) for k, v in word_to_index.items()])
-# tag_to_index = load_obj("../data/tag_index_dict")
-# index_to_tag = dict([(v, k) for k, v in tag_to_index.items()])
-
-# train_iter.reset()
-# for i, batch in enumerate(train_iter):
-#     if i == 1:
-#         data = batch.data[0].asnumpy().tolist()
-#         labels = batch.label[0].asnumpy().tolist()
-
-#         #map dict to index values to reproduce sentences
-#         sentences_train = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
-#         sentences_test = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
-#         tags_train = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
-#         tags_test = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
-
-        # for i, sentence in enumerate(sentences_train):
-        #     if i < 3:
-        #         print("\nsentence>tag mapping: %d" % (i))
-        #         for j in list(range(len(sentence))):
-        #             print("\ntoken: ", sentences_train[i][j], "\ntag: ", tags_train[i][j])
-
-train_iter.reset()
-
 #######################
 # create network symbol
 #######################
@@ -181,7 +151,7 @@ def sym_gen(seq_len):
 
     #scale predicted probability output for not entity predictions and block gradient
     ent_sm1 = mx.sym.slice_axis(data=sm, axis=1, begin=0, end=15)
-    not_entity_sm = mx.sym.slice_axis(data=sm, axis=1, begin=15, end=16)*config.not_entity_loss_scale
+    not_entity_sm = mx.sym.slice_axis(data=sm, axis=1, begin=15, end=16) * config.not_entity_loss_scale
     ent_sm2 = mx.sym.slice_axis(data=sm, axis=1, begin=16, end=17)
     output = mx.sym.concat(*[ent_sm1, not_entity_sm, ent_sm2], dim=1, name='entity_loss')
     print("\nrescaled softmax shape: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
@@ -195,7 +165,6 @@ def sym_gen(seq_len):
     print("\ntransposed onehot label shape: ", label.infer_shape(seq_label=input_label_shape)[1][0])
 
     #compute the cross entropy loss
-    #output = entity_sm
     loss = -((label * mx.sym.log(output)) + ((1 - label) * mx.sym.log(1 - output)))
     print("\ncross entropy loss shape: ", loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
@@ -281,3 +250,34 @@ for epoch in range(config.num_epoch):
 
 # #set the parameters of the prediction module to the learned values
 # model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model
+
+
+######################################################
+# ensure sentences are matched with entities correctly
+######################################################
+
+# #load in dict mapping indices back to words
+# word_to_index = load_obj("../data/word_index_dict")
+# index_to_word = dict([(v, k) for k, v in word_to_index.items()])
+# tag_to_index = load_obj("../data/tag_index_dict")
+# index_to_tag = dict([(v, k) for k, v in tag_to_index.items()])
+
+# train_iter.reset()
+# for i, batch in enumerate(train_iter):
+#     if i == 1:
+#         data = batch.data[0].asnumpy().tolist()
+#         labels = batch.label[0].asnumpy().tolist()
+
+#         #map dict to index values to reproduce sentences
+#         sentences_train = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
+#         sentences_test = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
+#         tags_train = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
+#         tags_test = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
+
+        # for i, sentence in enumerate(sentences_train):
+        #     if i < 3:
+        #         print("\nsentence>tag mapping: %d" % (i))
+        #         for j in list(range(len(sentence))):
+        #             print("\ntoken: ", sentences_train[i][j], "\ntag: ", tags_train[i][j])
+
+train_iter.reset()
