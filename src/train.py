@@ -84,6 +84,7 @@ val_iter = BucketNerIter(sentences=x_test,
 
 #the sequential and fused cells allow stacking multiple layers of RNN cells
 if config.context == mx.gpu():
+    print("\n\tTRAINING ON GPU: \n")
 
     #the fusedrnncell is optimized for gpu computation only
     bi_cell = mx.rnn.FusedRNNCell(num_hidden=config.lstm_state_size,
@@ -93,12 +94,14 @@ if config.context == mx.gpu():
                                         dropout=config.lstm_dropout)
 
 else:
+    print("\n\tTRAINING ON CPU: \n")
 
     bi_cell = mx.rnn.SequentialRNNCell()
 
     for layer_num in range(config.lstm_layers):
         bi_cell.add(mx.rnn.BidirectionalCell(mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix="forward_layer_" + str(layer_num)),
                                              mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix="backward_layer_" + str(layer_num))))
+        bi_cell.add(mx.rnn.DropoutCell(config.lstm_dropout))
 
 #architecture is defined in a function, to allow variable length input sequences
 def sym_gen(seq_len):
@@ -161,12 +164,15 @@ def sym_gen(seq_len):
     label = mx.sym.transpose(data=one_hot_labels, axes=(0,2,1), name = 'transposed_labels')
     print("\ntransposed onehot label shape: ", label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #compute the cross entropy loss and weight each label
-    loss = mx.sym.broadcast_mul(lhs = -(label * mx.sym.log(sm)), rhs = label_weights, name = 'customlossbiach')
-    print("\ncross entropy loss shape: ", loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
+    #compute the cross entropy loss
+    loss = -((label * mx.sym.log(sm)) + ((1- label) * mx.sym.log(1-sm)))
+
+    #weight the loss
+    weighted_loss = mx.sym.broadcast_mul(lhs = loss, rhs = label_weights, name = 'weighted loss function')
+    print("\ncross entropy loss shape: ", weighted_loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #symbol to compute the gradient of the loss with respect to the input data
-    loss_grad = mx.sym.make_loss(loss)
+    loss_grad = mx.sym.MakeLoss(data = weighted_loss, name = 'loss')
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #finally create a symbol group consisting of both the model output and the softmax layer output
