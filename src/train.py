@@ -11,6 +11,7 @@ import config
 from misc_modules import load_obj
 from data_iterators import BucketNerIter
 from metrics import composite_classifier_metrics
+from initializers import WeightInit
 
 ######################################
 # load data 
@@ -99,7 +100,6 @@ else:
         bi_cell.add(mx.rnn.BidirectionalCell(mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix="forward_layer_" + str(layer_num)),
                                              mx.rnn.LSTMCell(num_hidden=config.lstm_state_size, prefix="backward_layer_" + str(layer_num))))
 
-
 #architecture is defined in a function, to allow variable length input sequences
 def sym_gen(seq_len):
     """function that creates a network graph, depending on sequence length"""
@@ -116,9 +116,12 @@ def sym_gen(seq_len):
     #data placeholders: we are inputting a sequence of data each time.
     seq_data = mx.symbol.Variable('seq_data')
     seq_label = mx.sym.Variable('seq_label')
-    label_weights = mx.sym.Variable('weights')
     print("\ninput data shape: ", seq_data.infer_shape(seq_data=input_feature_shape)[1][0])
     print("\ninput label shape: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
+
+    #initialize weight array for use in our loss function, using a custom initializer and prevent the weights from being updated
+    label_weights = mx.sym.BlockGrad(mx.sym.Variable(name = 'weights', shape = (config.batch_size, num_labels, seq_len), init = WeightInit()))
+    print("\ninput weights shape: ", label_weights.infer_shape()[1][0])
 
     #create an embedding layer
     embed_layer = mx.sym.Embedding(data=seq_data, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
@@ -140,21 +143,15 @@ def sym_gen(seq_len):
     print("\nnumber of recurrent cell unrolls: ", len(outputs))
 
     #concatenate fully connected layers for each timestep
-    loss_input = mx.sym.concat(*step_outputs, dim=2, name = 'fc_outputs')
-    print("\nshape after concatenating outputs: ", loss_input.infer_shape(seq_data=input_feature_shape)[1][0])
+    r_output = mx.sym.concat(*step_outputs, dim=2, name = 'fc_outputs')
+    print("\nshape after concatenating outputs: ", r_output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #apply softmax function to network output
-    sm = mx.sym.softmax(data = loss_input, axis = 1, name = 'softmax_pred')
+    sm = mx.sym.softmax(data=r_output, axis=1, name='softmax_pred')
     print("\nshape after applying softmax to data: ", sm.infer_shape(seq_data=input_feature_shape)[1][0])
 
+    #create a symbol to use with evaluation metrics, since we use a custom loss function
     softmax_output = mx.sym.BlockGrad(data = sm,name = 'softmax')
-
-    #scale predicted probability output for not entity predictions and block gradient
-    ent_sm1 = mx.sym.slice_axis(data=sm, axis=1, begin=0, end=15)
-    not_entity_sm = mx.sym.slice_axis(data=sm, axis=1, begin=15, end=16) * config.not_entity_loss_scale
-    ent_sm2 = mx.sym.slice_axis(data=sm, axis=1, begin=16, end=17)
-    output = mx.sym.concat(*[ent_sm1, not_entity_sm, ent_sm2], dim=1, name='entity_loss')
-    print("\nrescaled softmax shape: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #one hot encode label input
     one_hot_labels = mx.sym.one_hot(indices = seq_label, depth = num_labels, name = 'one_hot_labels')
@@ -164,11 +161,11 @@ def sym_gen(seq_len):
     label = mx.sym.transpose(data=one_hot_labels, axes=(0,2,1), name = 'transposed_labels')
     print("\ntransposed onehot label shape: ", label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #compute the cross entropy loss
-    loss = -((label * mx.sym.log(output)) + ((1 - label) * mx.sym.log(1 - output)))
+    #compute the cross entropy loss and weight each label
+    loss = mx.sym.broadcast_mul(lhs = -(label * mx.sym.log(sm)), rhs = label_weights, name = 'customlossbiach')
     print("\ncross entropy loss shape: ", loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
-    #final loss grad
+    #symbol to compute the gradient of the loss with respect to the input data
     loss_grad = mx.sym.make_loss(loss)
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 

@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 #custom modules
-from custom_methods import save_obj
+from misc_modules import save_obj
 import config
 
 #read in csv of NER training data
@@ -29,27 +29,6 @@ df2 = df.groupby("utterance_id")["token"].apply(list).to_frame().reset_index()
 
 #join the results on utterance id
 df = df1.merge(df2, how = "left", on = "utterance_id")
-
-# we need to pad sentences to be atleast as long as the min bucket size
-min_sentence_length = min(config.buckets)
-
-# pad all other sentences to this length
-def pad(x, max_l):
-
-  pads = max_l - len(x)
-
-  if pads > 0:
-    padded_sentence = x + [""] * pads
-    padded_tags = x + ["O"] * pads
-
-  else:
-    padded_sentence = x
-    padded_tags = x
-
-  return padded_sentence, padded_tags
-
-df["token"] = df["token"].apply(lambda x: pad(x, min_sentence_length)[0])
-df["BILOU_tag"] = df["BILOU_tag"].apply(lambda x: pad(x, min_sentence_length)[1])
 
 print(df.head(3))
 print(df.iloc[2,1])

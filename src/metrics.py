@@ -17,6 +17,8 @@ def classifer_metrics(label, pred):
     
     label = label.astype(int)
 
+    #print("\nprediction: \n", prediction[0], "\nlabel: \n", label[0])
+
     #define if the prediction is an entity or not
     not_entity_index = load_obj("../data/tag_index_dict")["O"]
     pred_is_entity = prediction != not_entity_index
@@ -56,25 +58,31 @@ def entity_recall(label, pred):
 def entity_f1(label, pred):
     return classifer_metrics(label, pred)[2]
 
+def accuracy(label, pred):
+    """feval for computing accuracy, since we require custom metrics"""
+    return np.mean(label == np.argmax(pred, axis=1))
+
 def composite_classifier_metrics():
 
     metric1 = mx.metric.CustomMetric(feval=entity_precision,
-                           name='precision',
+                           name='entity precision',
                            output_names=['softmax_output'],
                            label_names=['seq_label'])
 
     metric2 = mx.metric.CustomMetric(feval=entity_recall,
-                           name='recall',
+                           name='entity recall',
                            output_names=['softmax_output'],
                            label_names=['seq_label'])   
     metric3 = mx.metric.CustomMetric(feval=entity_f1,
-                           name='f1 score',
+                           name='entity f1 score',
                            output_names=['softmax_output'],
                            label_names=['seq_label'])
 
-    metrics = [metric1, metric2, metric3]
+    metric4 = mx.metric.CustomMetric(feval = accuracy, 
+                                     name = 'total accuracy', 
+                                     output_names=['softmax_output'],
+                                     label_names=['seq_label'])
+
+    metrics = [metric4, metric1, metric2, metric3]
 
     return mx.metric.CompositeEvalMetric(metrics)
-
-def accuracy(label, pred):
-    return np.mean(label == np.argmax(pred, 1))
