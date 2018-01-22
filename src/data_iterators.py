@@ -21,10 +21,14 @@ class BucketNerIter(DataIter):
         if not buckets:
             buckets = [i for i, j in enumerate(np.bincount([len(s) for s in sentences])) if j >= batch_size]
         buckets.sort()
-        # thing = np.bincount([len(s) for s in sentences])
-        # print("\nindex and length counts: \n", 
-        #     [index for index, len_count in enumerate(thing)], 
-        #     [len_count for index, len_count in enumerate(thing)])
+        thing = np.bincount([len(s) for s in sentences])
+        keys = [str(index) for index, len_count in enumerate(thing)]
+        values = [len_count for index, len_count in enumerate(thing)]
+        dictionary = dict(zip(keys, values))
+
+        print("\n\tDATA PER BUCKET: \n")
+        for bucket in buckets:
+            print(bucket, ":", dictionary[str(bucket)])
         
         #make sure buckets have been defined
         assert (len(buckets) > 0), "no buckets could be created, not enough utterances of a certain length to create a bucket"

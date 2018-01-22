@@ -2,31 +2,28 @@
 
 [Implenting state of the art NN architecture from this paper](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
 
-## Notes
-
-- without bucketing we significantly increase the imbalance in the dataset, since we tag as "not entity"
-
 ## To do
 
-1. train without label weighting to high accuracy
-2. modify custom loss layer
+1. fix bucketing failure when weighting loss: 
 
-    - get block grad working/make sure you can scale entity prediction losses
-    - look into sentence level log-liklihood
+    - weights do not depend on seq length
+    - they are broadcast to shape of predicted probs
+    - code runs with one bucket and fails with >2 buckets (that contain data)
+    - error is below
 
-3. modify metric to measure per class precision and recall
-4. add CNN feature generation
+```
+Check failed: assign(&dattr, (*vec)[i]) Incompatible attr in node  at 2-th input: expected (17,54), got (1,17,1)
+```
 
-    - modify input data (ideally still 1 data source)
+2. include more features and CNN component:
+    - input needs all spacy features + charachters in each token
+    - iterator needs modifications to output variable length seq from input arrays
+    - network graph needs modifications to use CNN on charachters
+    - netowrk graph needs modifications to append CNN features + spacy features to embedding array
 
-5. add more features
-
-    - spacy provides dependency, postag, shape, capitalization features
-    - ensure mxnet embedding is doing what you think. we want context for vector initialization
-
-6. Train model to high standard on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
-7. Prove performance on real dataset after requesting access
-8. get prediction symbol working with bucketing.... needs to be a bucketing module!
+3. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+4. get prediction symbol working with bucketing: needs to be a bucketing module
+5. Prove performance on real dataset
 
 ## Dataset
 
@@ -36,8 +33,6 @@
 
 ## [State of the art](https://aclweb.org/aclwiki/CONLL-2003_(State_of_the_art))
 
+###Thoughts
 
-## Benefits
-
-- demonstrates convolutional layers for feature extraction, recurrent layers allowing variable length inputs, custom classification metrics to show meaningful scores on imbalanced data, custom loss functions to handle imbalanced labels
-
+Could loose loss function weighting to get done...grrr

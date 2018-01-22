@@ -123,8 +123,9 @@ def sym_gen(seq_len):
     print("\ninput label shape: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
 
     #initialize weight array for use in our loss function, using a custom initializer and prevent the weights from being updated
-    label_weights = mx.sym.BlockGrad(mx.sym.Variable(name = 'weights', shape = (config.batch_size, num_labels, seq_len), init = WeightInit()))
-    print("\ninput weights shape: ", label_weights.infer_shape()[1][0])
+    label_weights = mx.sym.BlockGrad(data=mx.sym.Variable(shape=(1, num_labels, 1), init=WeightInit(), name='label_weights'),name = "blocked_weights")
+    broadcast_label_weights = mx.sym.broadcast_to(data = label_weights, shape = (config.batch_size, num_labels, seq_len), name = 'broadcast weights')
+    print("\ninput weights shape: ", broadcast_label_weights.infer_shape()[1][0])
 
     #create an embedding layer
     embed_layer = mx.sym.Embedding(data=seq_data, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
@@ -157,25 +158,22 @@ def sym_gen(seq_len):
     softmax_output = mx.sym.BlockGrad(data = sm,name = 'softmax')
 
     #one hot encode label input
-    one_hot_labels = mx.sym.one_hot(indices = seq_label, depth = num_labels, name = 'one_hot_labels')
+    one_hot_labels = mx.sym.one_hot(indices=seq_label, depth=num_labels, name='one_hot_labels')
     print("\nonehot label shape: ", one_hot_labels.infer_shape(seq_label=input_label_shape)[1][0])
 
     #transpose to match network output
-    label = mx.sym.transpose(data=one_hot_labels, axes=(0,2,1), name = 'transposed_labels')
+    label = mx.sym.transpose(data=one_hot_labels, axes=(0, 2, 1), name='transposed_labels')
     print("\ntransposed onehot label shape: ", label.infer_shape(seq_label=input_label_shape)[1][0])
 
     #compute the cross entropy loss
-    loss = -((label * mx.sym.log(sm)) + ((1- label) * mx.sym.log(1-sm)))
-
-    #weight the loss
-    weighted_loss = mx.sym.broadcast_mul(lhs = loss, rhs = label_weights, name = 'weighted loss function')
-    print("\ncross entropy loss shape: ", weighted_loss.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
+    loss = -((label * mx.sym.log(sm)) + ((1 - label) * mx.sym.log(1 - sm))) * broadcast_label_weights
+    print("\ncross entropy loss shape: ", loss.infer_shape(seq_data = input_label_shape, seq_label=input_label_shape)[1][0])
 
     #symbol to compute the gradient of the loss with respect to the input data
-    loss_grad = mx.sym.MakeLoss(data = weighted_loss, name = 'loss')
+    loss_grad = mx.sym.MakeLoss(data = loss, name = 'loss')
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
-    #finally create a symbol group consisting of both the model output and the softmax layer output
+    #finally create a symbol group consisting of both the model output (gradient of loss with respect to data) and the softmax layer output (model predictions)
     network = mx.sym.Group([softmax_output, loss_grad])
 
     return network, ('seq_data',), ('seq_label',)
@@ -221,13 +219,13 @@ for epoch in range(config.num_epoch):
         model.update_metric(metric, batch.label)  # accumulate metric scores on prediction module
     print('\nEpoch %d, Training %s' % (epoch, metric.get()))
 
-    metric.reset()
+    # metric.reset()
 
-    for batch in val_iter:
-        bucket = batch.bucket_key
-        model.forward(batch, is_train=False)       # compute predictions
-        model.update_metric(metric, batch.label)   # accumulate metric scores
-    print('Epoch %d, Validation %s' % (epoch, metric.get()))
+    # for batch in val_iter:
+    #     bucket = batch.bucket_key
+    #     model.forward(batch, is_train=False)       # compute predictions
+    #     model.update_metric(metric, batch.label)   # accumulate metric scores
+    # print('Epoch %d, Validation %s' % (epoch, metric.get()))
 
 # #########################################
 # # create a separate module for predicting
