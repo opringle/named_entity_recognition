@@ -9,7 +9,7 @@ max_training_examples = None
 max_val_examples = None
 
 context = mx.cpu() #train on gpu or cpu
-buckets =[6,7] #leaving this empty lets MXNet choose best bucket sizes from data
+buckets =[6, 7] #leaving this empty lets MXNet choose best bucket sizes from data
 
 word_embedding_vector_length = 60  #the length of the vector for each unique word in the corpus
 lstm_layers = 1 #number of bidirectional lstm layers
