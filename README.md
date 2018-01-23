@@ -6,10 +6,9 @@
 
 1. fix bucketing failure when weighting loss: 
 
-    - weights do not depend on seq length
-    - they are broadcast to shape of predicted probs
-    - code runs with one bucket and fails with >2 buckets (that contain data)
-    - error is below
+    - error code is below
+    - if examples in any bucket that is not the first bucket > batch_size it fails
+    - switch to custom data iterator with fake data, find working and failing seeds, then modify data iterator to fix issue
 
 ```
 Check failed: assign(&dattr, (*vec)[i]) Incompatible attr in node  at 2-th input: expected (17,54), got (1,17,1)

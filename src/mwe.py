@@ -2,9 +2,6 @@ import mxnet as mx
 import random
 import sys
 
-#parameter to break this code or not
-break_code = sys.argv[1].lower() == "true"
-
 #synthetically create 1000 encoded sentences
 encoded_sentences = []
 for i in list(range(1000)):
@@ -83,12 +80,13 @@ def sym_gen(seq_len):
     sm = mx.sym.softmax(fc, name='predicted_proba')
     print("\nsoftmax shape: ", sm.infer_shape(data=data_shape)[1][0], "\n")
 
-    if break_code == False:
-        loss = -((onehot_label * mx.sym.log(sm)) + ((1 - onehot_label) * mx.sym.log(1 - sm)))
-    else:
-        loss = -((onehot_label * mx.sym.log(sm)) + ((1 - onehot_label) * mx.sym.log(1 - sm))) * broadcast_label_weights
+    reshaped_sm = mx.sym.Reshape(sm, shape=(-1))
+    reshaped_label = mx.sym.Reshape(onehot_label, shape=(-1))
+    reshaped_weights = mx.sym.Reshape(broadcast_label_weights, shape=(-1))
 
-    print("\ncross entropy loss shape: ", loss.infer_shape(data = data_shape, softmax_label=label_shape)[1][0])
+    loss = -((reshaped_label * mx.sym.log(reshaped_sm)) + ((1 - reshaped_label) * mx.sym.log(1 - reshaped_sm))) * reshaped_weights
+
+    #print("\ncross entropy loss shape: ", loss.infer_shape(data = data_shape, softmax_label=label_shape)[1][0])
 
     loss_grad = mx.sym.MakeLoss(loss, name = 'loss')
     print("\nloss grad shape: ", loss_grad.infer_shape(data=data_shape, softmax_label=label_shape)[1][0])

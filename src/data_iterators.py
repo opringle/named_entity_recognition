@@ -26,9 +26,9 @@ class BucketNerIter(DataIter):
         values = [len_count for index, len_count in enumerate(thing)]
         dictionary = dict(zip(keys, values))
 
-        print("\n\tDATA PER BUCKET: \n")
-        for bucket in buckets:
-            print(bucket, ":", dictionary[str(bucket)])
+        # print("\n\tDATA PER BUCKET: \n")
+        # for bucket in buckets:
+        #     print(bucket, ":", dictionary[str(bucket)])
         
         #make sure buckets have been defined
         assert (len(buckets) > 0), "no buckets could be created, not enough utterances of a certain length to create a bucket"
@@ -80,7 +80,7 @@ class BucketNerIter(DataIter):
         #convert to list of array of array
         self.label = [np.asarray(i, dtype=dtype) for i in self.label]
 
-        print("WARNING: discarded %d utterances longer than the largest bucket." % ndiscard)
+        #print("WARNING: discarded %d utterances longer than the largest bucket." % ndiscard)
 
         self.batch_size = batch_size
         self.buckets = buckets

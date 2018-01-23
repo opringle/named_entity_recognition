@@ -13,7 +13,7 @@ def classifer_metrics(label, pred):
     F = 2 * Precision * Recall / (Recall + Precision)"""
 
     #take highest probability as the prediction of the entity for each word
-    prediction = np.argmax(pred, axis=1)
+    prediction = np.argmax(pred, axis=2)
     
     label = label.astype(int)
 
@@ -60,7 +60,7 @@ def entity_f1(label, pred):
 
 def accuracy(label, pred):
     """feval for computing accuracy, since we require custom metrics"""
-    return np.mean(label == np.argmax(pred, axis=1))
+    return np.mean(label == np.argmax(pred, axis=2))
 
 def composite_classifier_metrics():
 
