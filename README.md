@@ -4,17 +4,15 @@
 
 ## To do
 
-1. weighted loss does nothing...this must be to do with gradient computations. investigate.
-
-2. include more features and CNN component:
+1. include more features and CNN component:
     - input needs all spacy features + charachters in each token
     - iterator needs modifications to output variable length seq from input arrays
     - network graph needs modifications to use CNN on charachters
     - netowrk graph needs modifications to append CNN features + spacy features to embedding array
 
-3. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
-4. get prediction symbol working with bucketing: needs to be a bucketing module
-5. Prove performance on real dataset
+2. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+3. get prediction symbol working with bucketing: needs to be a bucketing module
+4. Prove performance on real dataset
 
 ## Dataset
 

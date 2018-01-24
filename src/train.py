@@ -41,19 +41,18 @@ if config.max_val_examples:
     x_test = x_test[:config.max_val_examples]
     y_test = y_test[:config.max_val_examples]
 
-#print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test))
+print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test))
 
-#get index integer for "not entity"
+#infer dataset features used in training
 not_entity_index = load_obj("../data/tag_index_dict")["O"]
-#print("index of 'not entity' label: ", not_entity_index)
+num_labels = len(load_obj("../data/tag_index_dict"))
+vocab_size = len(load_obj("../data/word_index_dict"))
 
-# #get counts for entities in data
-# train_entity_counts = Counter(entity for sublist in y_train for entity in sublist)
-# val_entity_counts = Counter(entity for sublist in y_test for entity in sublist)
-# print("\nentites in training data: ", sum(train_entity_counts.values()) - train_entity_counts[not_entity_index], "/", sum(train_entity_counts.values()))
-# print("entites in validation data: ", sum(val_entity_counts.values()) - val_entity_counts[not_entity_index], "/", sum(val_entity_counts.values()),"\n")
-
-# print("\nentity counts: ", train_entity_counts)
+#get counts for entities in data
+train_entity_counts = Counter(entity for sublist in y_train for entity in sublist)
+val_entity_counts = Counter(entity for sublist in y_test for entity in sublist)
+print("\nentites in training data: ", sum(train_entity_counts.values()) - train_entity_counts[not_entity_index], "/", sum(train_entity_counts.values()))
+print("entites in validation data: ", sum(val_entity_counts.values()) - val_entity_counts[not_entity_index], "/", sum(val_entity_counts.values()),"\n")
 
 ##############################
 # create custom data iterators
@@ -77,68 +76,6 @@ val_iter = BucketNerIter(sentences=x_test,
                            label_name='seq_label',
                            label_pad=not_entity_index,
                            data_pad=-1)
-
-
-#######################
-# testing error
-#######################
-
-breakit = False
-
-import random
-
-if breakit == True:
-
-    random.seed(0)
-
-    #synthetically create 1000 encoded sentences
-    encoded_sentences = []
-    for i in list(range(1000)):
-        sentence_length = random.randint(1, 20)
-        sentence = random.sample(range(20), sentence_length)
-        encoded_sentences.append(sentence)
-
-    #save data to file
-    thefile = open('../data/working_data.txt', 'w')
-    for item in encoded_sentences:
-        thefile.write("%s\n" % item)
-
-else:
-    random.seed(10)
-
-    #synthetically create 1000 encoded sentences
-    encoded_sentences = []
-    for i in list(range(1000)):
-        sentence_length = random.randint(1, 20)
-        sentence = random.sample(range(20), sentence_length)
-        encoded_sentences.append(sentence)
-
-    #save data to file
-    thefile = open('../data/failing_data.txt', 'w')
-    for item in encoded_sentences:
-        thefile.write("%s\n" % item)
-
-# #count sentence lengths in data:
-# thing = np.bincount([len(s) for s in encoded_sentences])
-# print("\nsentences of each length: \n", thing)
-
-#use mxnet bucketing iterator, label is next value in sentence
-train_iter = mx.rnn.BucketSentenceIter(sentences=encoded_sentences,
-                                       batch_size=config.batch_size,
-                                       buckets=config.buckets,
-                                       data_name='seq_data',
-                                       label_name='seq_label',
-                                       invalid_label=1)
-
-print("training iterator buckets: ", train_iter.buckets)
-for i, data in enumerate(train_iter.data):
-    print("bucket size: ", train_iter.buckets[i], "training examples: ", len(data))
-
-# for i, batch in enumerate(train_iter):
-#     print("\nbatch: ", i, "\nbucket_size: ", batch.bucket_key, 
-#           "\ndata shape: ", batch.provide_data, "\nlabel shape: ", batch.provide_label,
-#           "\nbatch data shape: ", batch.data[0].shape, "\nbatch labels shape: ", batch.label[0].shape,
-#           "\nbatch data: ", batch.data)
 
 #######################
 # create network symbol
@@ -171,10 +108,6 @@ def sym_gen(seq_len):
 
     print("\n", "-" * 50,"\nNETWORK SYMBOL FOR SEQ LENGTH: ", seq_len, "\n", "-"*50)
 
-    #define hyperparameters from data folder
-    vocab_size = len(load_obj("../data/word_index_dict"))
-    num_labels = len(load_obj("../data/tag_index_dict"))
-
     input_feature_shape = (config.batch_size, seq_len)
     input_label_shape = (config.batch_size, seq_len)
 
@@ -184,60 +117,52 @@ def sym_gen(seq_len):
     print("\ninput data shape: ", seq_data.infer_shape(seq_data=input_feature_shape)[1][0])
     print("\ninput label shape: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #initialize weight array for use in our loss function, using a custom initializer and prevent the weights from being updated
-    label_weights = mx.sym.BlockGrad(data=mx.sym.Variable(shape=(1, 1, num_labels), init=WeightInit(), name='label_weights'),name = "blocked_weights")
-    broadcast_label_weights = mx.sym.broadcast_to(data = label_weights, shape = (config.batch_size, seq_len, num_labels), name = 'broadcast weights')
-    print("\ninput weights shape: ", broadcast_label_weights.infer_shape()[1][0])
+    #initialize weight array to multiply loss by
+    weights = mx.sym.BlockGrad(mx.sym.Variable(shape=(1,1, num_labels), init=WeightInit(), name='class_weights'))
+    print("\ninput weights shape: ", weights.infer_shape()[1][0])
+
+    #broadcast array to same shape as loss
+    label_weights = mx.sym.BlockGrad(mx.sym.broadcast_to(weights, shape=(config.batch_size, seq_len, num_labels), name='broadcast_class_weights'))
+    print("\nbroadcast weights shape: ", label_weights.infer_shape()[1][0])
 
     #create an embedding layer
     embed_layer = mx.sym.Embedding(data=seq_data, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
     print("\nembedding layer shape: ", embed_layer.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    #unroll the lstm cell in time: output is a list of forward/backward concatenated symbols from the final layer
+    #unroll the lstm cell in time, merging outputs
     bi_cell.reset()
-    outputs, states = bi_cell.unroll(length=seq_len, inputs=embed_layer, merge_outputs=False)
-    print("\neach of the ", seq_len, " unrolled cells has concatenated forward and backward cell shape: ", 
-        outputs[0].infer_shape(seq_data=input_feature_shape)[1][0])
+    output, states = bi_cell.unroll(length=seq_len, inputs=embed_layer, merge_outputs=True)
+    print("\ncoutputs from all lstm cells in final layer: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    #for each timestep, add a fully connected layer with num_neurons = num_possible_tags
-    step_outputs = []
-    for i, step_output in enumerate(outputs):
-        fc = mx.sym.FullyConnected(data=step_output, num_hidden=num_labels, name = "fc_" + str(i))
-        reshaped_fc = mx.sym.Reshape(data=fc, shape=(config.batch_size, 1, num_labels), name = "rfc_" + str(i))
-        step_outputs.append(reshaped_fc)
-    print("\nshape after each cell output passes through fully connected layer: ", reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
-    print("\nnumber of recurrent cell unrolls: ", len(outputs))
+    #reshape outputs so each lstm state size can be mapped to n labels
+    output = mx.sym.Reshape(output, shape=(-1,config.lstm_state_size*2), name='r_output')
+    print("\nreshaped output shape: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    #concatenate fully connected layers for each timestep
-    r_output = mx.sym.concat(*step_outputs, dim=1, name = 'fc_outputs')
-    print("\nshape after concatenating outputs: ", r_output.infer_shape(seq_data=input_feature_shape)[1][0])
+    #map each output to num labels
+    fc = mx.sym.FullyConnected(output, num_hidden=num_labels, name='fc_layer')
+    print("\nfully connected layer shape: ", fc.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    #apply softmax function to network output
-    sm = mx.sym.softmax(data=r_output, axis=1, name='softmax_pred')
+    #reshape back to same shape as loss will be
+    reshaped_fc = mx.sym.reshape(fc, shape = (config.batch_size, seq_len, num_labels))
+    print("\nreshaped fc for loss: ", reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    #apply softmax function to ensure outputs from fc are between 0 and 1
+    sm = mx.sym.softmax(data=reshaped_fc, axis=1, name='softmax_pred')
     print("\nshape after applying softmax to data: ", sm.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #create a symbol to use with evaluation metrics, since we use a custom loss function
-    softmax_output = mx.sym.BlockGrad(data = sm,name = 'softmax')
+    softmax_output = mx.sym.BlockGrad(data = sm, name = 'softmax')
 
     #one hot encode label input
     one_hot_labels = mx.sym.one_hot(indices=seq_label, depth=num_labels, name='one_hot_labels')
     print("\nonehot label shape: ", one_hot_labels.infer_shape(seq_label=input_label_shape)[1][0])
 
-    # #compute the cross entropy loss
-    # reshaped_sm = mx.sym.Reshape(sm, shape=(config.batch_size, -1))
-    # print("\nreshaped sm: ", reshaped_sm.infer_shape(seq_data=input_feature_shape)[1][0])
-
-    # reshaped_label = mx.sym.Reshape(one_hot_labels, shape=(config.batch_size, -1))
-    # print("\nreshaped label shape: ", reshaped_label.infer_shape(seq_label=input_label_shape)[1][0])
-
-    # reshaped_weights = mx.sym.Reshape(broadcast_label_weights, shape=(config.batch_size, -1))
-    # print("\nreshaped weights shape: ", reshaped_weights.infer_shape()[1][0])
-
-    loss = -((one_hot_labels * mx.sym.log(sm)) + ((1 - one_hot_labels) * mx.sym.log(1 - sm))) * broadcast_label_weights
+    #compute cross entropy loss between predictions and labels
+    loss = -((one_hot_labels * mx.sym.log(sm)) + ((1 - one_hot_labels) * mx.sym.log(1 - sm)))
     print("\ncross entropy loss shape: ", loss.infer_shape(seq_data = input_label_shape, seq_label=input_label_shape)[1][0])
 
     #symbol to compute the gradient of the loss with respect to the input data
-    loss_grad = mx.sym.MakeLoss(loss, name = 'loss')
+    loss_grad = mx.sym.MakeLoss(loss * label_weights, name='loss_gradient')
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #finally create a symbol group consisting of both the model output (gradient of loss with respect to data) and the softmax layer output (model predictions)
@@ -254,13 +179,9 @@ model = mx.mod.BucketingModule(sym_gen= sym_gen,
                                default_bucket_key=train_iter.default_bucket_key, 
                                context = config.context)
 
-# allocate memory given the input data and label shapes
+# allocate memory to module
 model.bind(data_shapes=train_iter.provide_data,label_shapes=train_iter.provide_label)
-
-# initialize parameters by uniform random numbers
 model.init_params(initializer=mx.init.Uniform(scale=.1))
-
-# use SGD with learning rate 0.1 to train
 model.init_optimizer(optimizer=config.optimizer, optimizer_params=config.optimizer_params)
 
 #define a custom metric, which takes the output from an internal layer and calculates precision, recall and f1 score
@@ -286,17 +207,17 @@ for epoch in range(config.num_epoch):
         model.update_metric(metric, batch.label)  # accumulate metric scores on prediction module
     print('\nEpoch %d, Training %s' % (epoch, metric.get()))
 
-    # metric.reset()
+    metric.reset()
 
-    # for batch in val_iter:
-    #     bucket = batch.bucket_key
-    #     model.forward(batch, is_train=False)       # compute predictions
-    #     model.update_metric(metric, batch.label)   # accumulate metric scores
-    # print('Epoch %d, Validation %s' % (epoch, metric.get()))
+    for batch in val_iter:
+        bucket = batch.bucket_key
+        model.forward(batch, is_train=False)       # compute predictions
+        model.update_metric(metric, batch.label)   # accumulate metric scores
+    print('Epoch %d, Validation %s' % (epoch, metric.get()))
 
-# #########################################
-# # create a separate module for predicting
-# #########################################
+#########################################
+# create a separate module for predicting
+#########################################
 
 # #TODO: pred shape is not reliable when batch size not a multiple of number of training examples
 
