@@ -5,10 +5,10 @@
 ## To do
 
 1. include more features and CNN component:
-    - input needs all spacy features + charachters in each token
+    - input needs all spacy features + characters in each token
     - iterator needs modifications to output variable length seq from input arrays
-    - network graph needs modifications to use CNN on charachters
-    - netowrk graph needs modifications to append CNN features + spacy features to embedding array
+    - network graph needs modifications to use CNN on characters
+    - network graph needs modifications to append CNN features + spacy features to embedding array
 
 2. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
 3. get prediction symbol working with bucketing: needs to be a bucketing module
@@ -21,7 +21,3 @@
 - Follow the instructions in the [README](https://www.clips.uantwerpen.be/conll2003/ner/000README) to generate training files
 
 ## [State of the art](https://aclweb.org/aclwiki/CONLL-2003_(State_of_the_art))
-
-###Thoughts
-
-Could loose loss function weighting to get done...grrr
