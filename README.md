@@ -4,15 +4,7 @@
 
 ## To do
 
-1. fix bucketing failure when weighting loss: 
-
-    - error code is below
-    - if examples in any bucket that is not the first bucket > batch_size it fails
-    - switch to custom data iterator with fake data, find working and failing seeds, then modify data iterator to fix issue
-
-```
-Check failed: assign(&dattr, (*vec)[i]) Incompatible attr in node  at 2-th input: expected (17,54), got (1,17,1)
-```
+1. weighted loss does nothing...this must be to do with gradient computations. investigate.
 
 2. include more features and CNN component:
     - input needs all spacy features + charachters in each token
