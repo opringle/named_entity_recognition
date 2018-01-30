@@ -4,13 +4,11 @@
 
 ## To do
 
-1. get list of 2d arrays saving and loading
-2. modify bucketing iterator to handle 2d numpy arrays
-3. modify the network to use char features in cnn and append pos tags to embeddings
-4. set hyperparameters to those in the paper
-5. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
-6. get prediction symbol working with bucketing: needs to be a bucketing module
-7. Prove performance on real dataset
+1. clean up and simplify all code
+2. refer to paper to see how they implemented it
+3. set hyperparameters to those in the paper
+4. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+5. get prediction symbol working with bucketing: needs to be a bucketing module
 
 ## Dataset
 

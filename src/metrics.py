@@ -2,7 +2,7 @@ import mxnet as mx
 import numpy as np
 
 #custom modules
-from misc_modules import load_obj
+from data_helpers import load_obj
 
 #read in dictionary mapping BILOU entity tags to integer indices
 tag_dict = load_obj("../data/tag_to_index")

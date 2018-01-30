@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from itertools import chain
+import pickle
 
 #custom modules
-from misc_modules import save_obj
+from data_helpers import save_obj
 import config
 
 #read in csv of NER training data
@@ -73,8 +74,8 @@ unique_tags = set(list(chain.from_iterable(y)))
 tag_to_index = {k: v for v, k in enumerate(unique_tags)}
 
 #save dicts
-save_obj(feature_to_index, "../data/tag_to_index")
-save_obj(tag_to_index, "../data/feature_to_index")
+save_obj(feature_to_index, "../data/feature_to_index")
+save_obj(tag_to_index, "../data/tag_to_index")
 
 def index_array(array,d):
   """map dict to array"""
@@ -89,8 +90,6 @@ def index_array(array,d):
 indexed_x = [index_array(array, feature_to_index) for array in x]
 indexed_y = [index_array(array, tag_to_index) for array in y]
 
-print(indexed_y[0:1], indexed_x[0:1])
-
 #split into training and test sets
 split_index = int(config.split[0] * len(indexed_x))
 x_train = indexed_x[:split_index]
@@ -99,7 +98,7 @@ y_train = indexed_y[:split_index]
 y_test = indexed_y[split_index:]
 
 #save to file
-np.save('../data/x_train.txt', x_train)
-np.save('../data/y_train.txt', y_train)
-np.save('../data/x_test.txt', x_test)
-np.save('../data/y_test.txt', y_test)
+save_obj(x_train, "x_train")
+save_obj(x_test, "x_test")
+save_obj(y_train, "y_train")
+save_obj(y_test, "y_test")

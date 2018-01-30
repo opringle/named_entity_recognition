@@ -8,7 +8,7 @@ import ast
 
 #custom modules
 import config
-from misc_modules import load_obj
+from data_helpers import load_obj
 from data_iterators import BucketNerIter
 from metrics import composite_classifier_metrics
 from initializers import WeightInit
@@ -17,10 +17,10 @@ from initializers import WeightInit
 # load data 
 ######################################
 
-x_train = np.load('../data/x_train.txt').tolist()
-y_train = np.load('../data/y_train.txt').tolist()
-x_test = np.load('../data/x_test.txt').tolist()
-y_test = np.load('../data/y_test.txt').tolist()
+x_train = load_obj("x_train")
+y_train = load_obj("y_train")
+x_test = load_obj("x_test")
+y_test = load_obj("y_test")
 
 if config.max_training_examples:
     x_train = x_train[:config.max_training_examples]
@@ -36,6 +36,7 @@ print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test
 not_entity_index = load_obj("../data/tag_to_index")["O"]
 num_labels = len(load_obj("../data/tag_to_index"))
 vocab_size = len(load_obj("../data/feature_to_index"))
+features = x_train[0].shape[0]
 
 #get counts for entities in data
 train_entity_counts = Counter(entity for sublist in y_train for entity in sublist)
@@ -97,7 +98,7 @@ def sym_gen(seq_len):
 
     print("\n", "-" * 50,"\nNETWORK SYMBOL FOR SEQ LENGTH: ", seq_len, "\n", "-"*50)
 
-    input_feature_shape = (config.batch_size, seq_len)
+    input_feature_shape = (config.batch_size, features, seq_len)
     input_label_shape = (config.batch_size, seq_len)
 
     #data placeholders: we are inputting a sequence of data each time.
@@ -106,7 +107,7 @@ def sym_gen(seq_len):
     print("\ninput data shape: ", seq_data.infer_shape(seq_data=input_feature_shape)[1][0])
     print("\ninput label shape: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #initialize weight array to multiply loss by
+    #initialize weight array (to multiply loss later)
     weights = mx.sym.BlockGrad(mx.sym.Variable(shape=(1,1, num_labels), init=WeightInit(), name='class_weights'))
     print("\ninput weights shape: ", weights.infer_shape()[1][0])
 
@@ -114,14 +115,80 @@ def sym_gen(seq_len):
     label_weights = mx.sym.BlockGrad(mx.sym.broadcast_to(weights, shape=(config.batch_size, seq_len, num_labels), name='broadcast_class_weights'))
     print("\nbroadcast weights shape: ", label_weights.infer_shape()[1][0])
 
+    #split input features
+    tokens = mx.sym.slice_axis(seq_data, axis = 1, begin = 0, end = 1)
+    pos_tags = mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=1, end=2), axes = (0,2,1))
+    char_features = mx.sym.slice_axis(seq_data, axis=1, begin=2, end=features)
+    print("\ntoken features shape: ", tokens.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\npostag features shape: ", pos_tags.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\nchar features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    ###################################
+    # CHAR LEVEL CONVOLUTIONAL FEATURES
+    ###################################
+
+    char_features = mx.sym.Reshape(mx.sym.transpose(char_features, axes = (0,2,1)), shape = (0,1,seq_len,-1))
+    print("\nchar features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    embedded_char_features = mx.sym.Embedding(data=char_features, input_dim=100, output_dim=config.char_vectorsize, name='char_embed')
+    print("\nembedded char features shape: ", embedded_char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    cnn_outputs = []
+    for i, filter_size in enumerate(config.char_filter_list):
+        
+        #convolutional layer with a kernel that slides over entire words resulting in a 1d output
+        convi = mx.sym.Convolution(data=embedded_char_features, 
+                                   kernel=(1, filter_size, config.char_vectorsize), 
+                                   stride = (1,1,1), 
+                                   num_filter=config.char_filters,
+                                   name ="conv_layer_" +  str(i))
+        print("\nchar conv features shape: ", convi.infer_shape(seq_data=input_feature_shape)[1][0])
+
+        #apply activation function
+        acti = mx.sym.Activation(data=convi, act_type='tanh')
+
+        #take the max value of the convolution, sliding 1 unit (stride) at a time
+        pooli = mx.sym.Pooling(data=acti, pool_type='max', kernel=(1, config.max_token_chars - filter_size + 1, 1), stride=(1, 1, 1))
+        print("\npooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
+
+        pooli = mx.sym.Reshape(pooli, shape = (0,0,0))
+        print("\nreshaped pooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
+
+        cnn_outputs.append(pooli)
+
+    #combine features from all filters
+    concat = mx.sym.transpose(mx.sym.Concat(*cnn_outputs, dim=1), axes = (0,2,1))
+    print("\nall char features shape: ", concat.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    #apply dropout to this layer
+    h_drop = mx.sym.Dropout(data=concat, p=config.cnn_dropout, mode='training')
+
+    #########################
+    # WORD EMBEDDING FEATURES
+    #########################
+
+    reshaped_tokens = mx.sym.Reshape(tokens, shape = (0,-1))
+    print("\nreshaped token features shape: ", reshaped_tokens.infer_shape(seq_data=input_feature_shape)[1][0])
+
     #create an embedding layer
-    embed_layer = mx.sym.Embedding(data=seq_data, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
+    embed_layer = mx.sym.Embedding(data=reshaped_tokens, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
     print("\nembedding layer shape: ", embed_layer.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    ########################
+    # COMBINING ALL FEATURES
+    ########################
+
+    all_features = mx.sym.Concat(*[embed_layer, h_drop, pos_tags], dim = 2)
+    print("\nall features  shape: ", all_features.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    ##############################
+    # BIDIRECTIONAL LSTM COMPONENT
+    ##############################
 
     #unroll the lstm cell in time, merging outputs
     bi_cell.reset()
-    output, states = bi_cell.unroll(length=seq_len, inputs=embed_layer, merge_outputs=True)
-    print("\ncoutputs from all lstm cells in final layer: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
+    output, states = bi_cell.unroll(length=seq_len, inputs=all_features, merge_outputs=True)
+    print("\noutputs from all lstm cells in final layer: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #reshape outputs so each lstm state size can be mapped to n labels
     output = mx.sym.Reshape(output, shape=(-1,config.lstm_state_size*2), name='r_output')
@@ -134,6 +201,10 @@ def sym_gen(seq_len):
     #reshape back to same shape as loss will be
     reshaped_fc = mx.sym.reshape(fc, shape = (config.batch_size, seq_len, num_labels))
     print("\nreshaped fc for loss: ", reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
+
+    #################################
+    # WEIGHTED SOFTMAX LOSS COMPONENT
+    #################################
 
     #apply softmax function to ensure outputs from fc are between 0 and 1
     sm = mx.sym.softmax(data=reshaped_fc, axis=1, name='softmax_pred')
@@ -148,7 +219,7 @@ def sym_gen(seq_len):
 
     #compute cross entropy loss between predictions and labels
     loss = -((one_hot_labels * mx.sym.log(sm)) + ((1 - one_hot_labels) * mx.sym.log(1 - sm)))
-    print("\ncross entropy loss shape: ", loss.infer_shape(seq_data = input_label_shape, seq_label=input_label_shape)[1][0])
+    print("\ncross entropy loss shape: ", loss.infer_shape(seq_data = input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #symbol to compute the gradient of the loss with respect to the input data
     loss_grad = mx.sym.MakeLoss(loss * label_weights, name='loss_gradient')
