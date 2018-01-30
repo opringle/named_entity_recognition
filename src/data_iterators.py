@@ -39,23 +39,23 @@ class BucketNerIter(DataIter):
         self.data = [[] for _ in buckets]
 
         #loop through sentences
-        for i, tokenized_sentence in enumerate(sentences):
+        features = sentences[0].shape[0]
+        for i, feature_array in enumerate(sentences):
 
             #find the index of the smallest bucket that is larger than the sentence length
-            buck = bisect.bisect_left(buckets, len(tokenized_sentence))
+            buck = bisect.bisect_left(buckets, len(feature_array))
             #if the sentence is larger than the largest bucket, discard it
             if buck == len(buckets):
                 ndiscard += 1
                 continue
-            #create an array of shape (bucket_size,) filled with 'data_pad'
-            buff = np.full((buckets[buck],), data_pad, dtype=dtype)
+            #create an array of shape (features, bucket_size) filled with 'data_pad'
+            buff = np.full((features, buckets[buck]), data_pad, dtype=dtype)
             #replace elements up to the sentence length with actual values
-            # eg. sent length=8, bucket size=10: [1,3,4,5,6,3,8,7,-1,-1]
-            buff[:len(tokenized_sentence)] = tokenized_sentence
+            buff[:, :len(feature_array)] = feature_array
             #append array to index = bucket index
             self.data[buck].append(buff)
 
-        #convert to list of array of array
+        #convert to list of array of 2d array
         self.data = [np.asarray(i, dtype=dtype) for i in self.data]
 
         self.label = [[] for _ in buckets]

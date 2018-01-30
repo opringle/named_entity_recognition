@@ -4,15 +4,13 @@
 
 ## To do
 
-1. include more features and CNN component:
-    - input needs all spacy features + characters in each token
-    - iterator needs modifications to output variable length seq from input arrays
-    - network graph needs modifications to use CNN on characters
-    - network graph needs modifications to append CNN features + spacy features to embedding array
-
-2. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
-3. get prediction symbol working with bucketing: needs to be a bucketing module
-4. Prove performance on real dataset
+1. get list of 2d arrays saving and loading
+2. modify bucketing iterator to handle 2d numpy arrays
+3. modify the network to use char features in cnn and append pos tags to embeddings
+4. set hyperparameters to those in the paper
+5. Train model to > 80% F1 score on [small kaggle dataset](https://www.kaggle.com/abhinavwalia95/entity-annotated-corpus)
+6. get prediction symbol working with bucketing: needs to be a bucketing module
+7. Prove performance on real dataset
 
 ## Dataset
 

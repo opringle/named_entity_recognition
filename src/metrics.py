@@ -5,7 +5,7 @@ import numpy as np
 from misc_modules import load_obj
 
 #read in dictionary mapping BILOU entity tags to integer indices
-tag_dict = load_obj("../data/tag_index_dict")
+tag_dict = load_obj("../data/tag_to_index")
 outside_tag_index = tag_dict["O"]
 
 def classifer_metrics(label, pred):
@@ -20,7 +20,7 @@ def classifer_metrics(label, pred):
     #print("\nprediction: \n", prediction[0], "\nlabel: \n", label[0])
 
     #define if the prediction is an entity or not
-    not_entity_index = load_obj("../data/tag_index_dict")["O"]
+    not_entity_index = load_obj("../data/tag_to_index")["O"]
     pred_is_entity = prediction != not_entity_index
     label_is_entity = label != not_entity_index
 

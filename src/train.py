@@ -17,21 +17,10 @@ from initializers import WeightInit
 # load data 
 ######################################
 
-with open("../data/x_train.txt") as f:
-    x_train = f.readlines()
-x_train = [ast.literal_eval(x.strip()) for x in x_train]
-
-with open("../data/x_test.txt") as f:
-    x_test = f.readlines()
-x_test = [ast.literal_eval(x.strip()) for x in x_test]
-
-with open("../data/y_train.txt") as f:
-    y_train = f.readlines()
-y_train = [ast.literal_eval(x.strip()) for x in y_train]
-
-with open("../data/y_test.txt") as f:
-    y_test = f.readlines()
-y_test = [ast.literal_eval(x.strip()) for x in y_test]
+x_train = np.load('../data/x_train.txt').tolist()
+y_train = np.load('../data/y_train.txt').tolist()
+x_test = np.load('../data/x_test.txt').tolist()
+y_test = np.load('../data/y_test.txt').tolist()
 
 if config.max_training_examples:
     x_train = x_train[:config.max_training_examples]
@@ -44,9 +33,9 @@ if config.max_val_examples:
 print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test))
 
 #infer dataset features used in training
-not_entity_index = load_obj("../data/tag_index_dict")["O"]
-num_labels = len(load_obj("../data/tag_index_dict"))
-vocab_size = len(load_obj("../data/word_index_dict"))
+not_entity_index = load_obj("../data/tag_to_index")["O"]
+num_labels = len(load_obj("../data/tag_to_index"))
+vocab_size = len(load_obj("../data/feature_to_index"))
 
 #get counts for entities in data
 train_entity_counts = Counter(entity for sublist in y_train for entity in sublist)

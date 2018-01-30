@@ -5,8 +5,9 @@ import mxnet as mx
 split = [0.8, 0.2]
 
 #training
-max_training_examples = None
-max_val_examples = None
+max_training_examples = 100
+max_val_examples = 10
+max_token_chars = 20
 
 context = mx.cpu() #train on gpu or cpu
 buckets =[] #leaving this empty lets MXNet choose best bucket sizes from data
