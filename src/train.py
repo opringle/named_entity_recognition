@@ -9,18 +9,18 @@ import ast
 #custom modules
 import config
 from data_helpers import load_obj
-from data_iterators import BucketNerIter
+from iterators import BucketNerIter
 from metrics import composite_classifier_metrics
 from initializers import WeightInit
 
-######################################
-# load data 
-######################################
+#########################
+# load and summarize data 
+#########################
 
-x_train = load_obj("x_train")
-y_train = load_obj("y_train")
-x_test = load_obj("x_test")
-y_test = load_obj("y_test")
+x_train = load_obj("../data/x_train")
+y_train = load_obj("../data/y_train")
+x_test = load_obj("../data/x_test")
+y_test = load_obj("../data/y_test")
 
 if config.max_training_examples:
     x_train = x_train[:config.max_training_examples]
@@ -30,10 +30,10 @@ if config.max_val_examples:
     x_test = x_test[:config.max_val_examples]
     y_test = y_test[:config.max_val_examples]
 
-print("\ntraining sentences: ", len(x_train), "\n\ntest sentences: ", len(x_test))
+print("\ntraining sentences: {} \ntest sentences {}".format(len(x_train), len(x_test)))
 
-#infer dataset features used in training
-not_entity_index = load_obj("../data/tag_to_index")["O"]
+#infer dataset features required to build module
+outside_tag_index = load_obj("../data/tag_to_index")["O"]
 num_labels = len(load_obj("../data/tag_to_index"))
 vocab_size = len(load_obj("../data/feature_to_index"))
 features = x_train[0].shape[0]
@@ -41,8 +41,10 @@ features = x_train[0].shape[0]
 #get counts for entities in data
 train_entity_counts = Counter(entity for sublist in y_train for entity in sublist)
 val_entity_counts = Counter(entity for sublist in y_test for entity in sublist)
-print("\nentites in training data: ", sum(train_entity_counts.values()) - train_entity_counts[not_entity_index], "/", sum(train_entity_counts.values()))
-print("entites in validation data: ", sum(val_entity_counts.values()) - val_entity_counts[not_entity_index], "/", sum(val_entity_counts.values()),"\n")
+print("\nentites in training data: {} / {}".format(sum(train_entity_counts.values()) - train_entity_counts[outside_tag_index], 
+                                                   sum(train_entity_counts.values())))
+print("entites in validation data: {} / {}".format(sum(val_entity_counts.values()) - val_entity_counts[outside_tag_index], 
+                                                   sum(val_entity_counts.values())))
 
 ##############################
 # create custom data iterators
@@ -55,7 +57,7 @@ train_iter = BucketNerIter(sentences=x_train,
                            buckets = config.buckets,
                            data_name='seq_data',
                            label_name='seq_label',
-                           label_pad=not_entity_index,
+                           label_pad=outside_tag_index,
                            data_pad=-1)
 
 val_iter = BucketNerIter(sentences=x_test,
@@ -64,14 +66,14 @@ val_iter = BucketNerIter(sentences=x_test,
                            buckets=train_iter.buckets,
                            data_name='seq_data',
                            label_name='seq_label',
-                           label_pad=not_entity_index,
+                           label_pad=outside_tag_index,
                            data_pad=-1)
 
-#######################
-# create network symbol
-#######################
+###############################################################
+# create bucketing module to train on variable sequence lengths
+###############################################################
 
-#the sequential and fused cells allow stacking multiple layers of RNN cells
+#use GPU optimized sequential RNN cell if possible
 if config.context == mx.gpu():
     print("\n\tTRAINING ON GPU: \n")
 
@@ -118,23 +120,25 @@ def sym_gen(seq_len):
     #split input features
     tokens = mx.sym.slice_axis(seq_data, axis = 1, begin = 0, end = 1)
     pos_tags = mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=1, end=2), axes = (0,2,1))
-    char_features = mx.sym.slice_axis(seq_data, axis=1, begin=2, end=features)
+    char_features = mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=2, end=features), axes = (0,2,1))
     print("\ntoken features shape: ", tokens.infer_shape(seq_data=input_feature_shape)[1][0])
-    print("\npostag features shape: ", pos_tags.infer_shape(seq_data=input_feature_shape)[1][0])
-    print("\nchar features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\ntransposed postag features shape: ", pos_tags.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\ntransposed char features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    ###################################
-    # CHAR LEVEL CONVOLUTIONAL FEATURES
-    ###################################
+    print("""\n\t#########################################
+        # CHARACTER LEVEL CONVOLUTIONAL COMPONENT
+        #########################################""")
 
-    char_features = mx.sym.Reshape(mx.sym.transpose(char_features, axes = (0,2,1)), shape = (0,1,seq_len,-1))
-    print("\nchar features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+    char_features = mx.sym.Reshape(char_features, shape = (0,1,seq_len,-1))
+    print("\nreshaped char features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
     embedded_char_features = mx.sym.Embedding(data=char_features, input_dim=100, output_dim=config.char_vectorsize, name='char_embed')
     print("\nembedded char features shape: ", embedded_char_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
     cnn_outputs = []
     for i, filter_size in enumerate(config.char_filter_list):
+
+        print("\n applying filters of size ", filter_size)
         
         #convolutional layer with a kernel that slides over entire words resulting in a 1d output
         convi = mx.sym.Convolution(data=embedded_char_features, 
@@ -142,17 +146,17 @@ def sym_gen(seq_len):
                                    stride = (1,1,1), 
                                    num_filter=config.char_filters,
                                    name ="conv_layer_" +  str(i))
-        print("\nchar conv features shape: ", convi.infer_shape(seq_data=input_feature_shape)[1][0])
+        print("\n\tconvolutional output shape: ", convi.infer_shape(seq_data=input_feature_shape)[1][0])
 
         #apply activation function
         acti = mx.sym.Activation(data=convi, act_type='tanh')
 
         #take the max value of the convolution, sliding 1 unit (stride) at a time
         pooli = mx.sym.Pooling(data=acti, pool_type='max', kernel=(1, config.max_token_chars - filter_size + 1, 1), stride=(1, 1, 1))
-        print("\npooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
+        print("\n\tpooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
 
         pooli = mx.sym.Reshape(pooli, shape = (0,0,0))
-        print("\nreshaped pooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
+        print("\n\treshaped pooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
 
         cnn_outputs.append(pooli)
 
@@ -163,9 +167,9 @@ def sym_gen(seq_len):
     #apply dropout to this layer
     h_drop = mx.sym.Dropout(data=concat, p=config.cnn_dropout, mode='training')
 
-    #########################
-    # WORD EMBEDDING FEATURES
-    #########################
+    print("""\n\t#########################
+        # WORD EMBEDDING FEATURES
+        #########################""")
 
     reshaped_tokens = mx.sym.Reshape(tokens, shape = (0,-1))
     print("\nreshaped token features shape: ", reshaped_tokens.infer_shape(seq_data=input_feature_shape)[1][0])
@@ -174,16 +178,13 @@ def sym_gen(seq_len):
     embed_layer = mx.sym.Embedding(data=reshaped_tokens, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
     print("\nembedding layer shape: ", embed_layer.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    ########################
-    # COMBINING ALL FEATURES
-    ########################
-
+    #combining all features
     all_features = mx.sym.Concat(*[embed_layer, h_drop, pos_tags], dim = 2)
     print("\nall features  shape: ", all_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    ##############################
-    # BIDIRECTIONAL LSTM COMPONENT
-    ##############################
+    print("""\n\t##############################
+        # BIDIRECTIONAL LSTM COMPONENT
+        ##############################""")
 
     #unroll the lstm cell in time, merging outputs
     bi_cell.reset()
@@ -202,9 +203,9 @@ def sym_gen(seq_len):
     reshaped_fc = mx.sym.reshape(fc, shape = (config.batch_size, seq_len, num_labels))
     print("\nreshaped fc for loss: ", reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
 
-    #################################
-    # WEIGHTED SOFTMAX LOSS COMPONENT
-    #################################
+    print("""\n\t#################################
+        # WEIGHTED SOFTMAX LOSS COMPONENT
+        #################################""")
 
     #apply softmax function to ensure outputs from fc are between 0 and 1
     sm = mx.sym.softmax(data=reshaped_fc, axis=1, name='softmax_pred')
@@ -244,89 +245,43 @@ model.bind(data_shapes=train_iter.provide_data,label_shapes=train_iter.provide_l
 model.init_params(initializer=mx.init.Uniform(scale=.1))
 model.init_optimizer(optimizer=config.optimizer, optimizer_params=config.optimizer_params)
 
-#define a custom metric, which takes the output from an internal layer and calculates precision, recall and f1 score
+#define a custom metric, which takes the output from an internal layer and calculates precision, recall and f1 score for the entity class
 metric = composite_classifier_metrics()
 
-####################################
-# fit the model to the training data
-####################################
+################################################
+# fit the model to the training data and save it
+################################################
 
 # train x epochs, i.e. going over the data iter one pass
-for epoch in range(config.num_epoch):
+try:
+    for epoch in range(config.num_epoch):
 
-    train_iter.reset()
-    val_iter.reset()
-    metric.reset()
+        train_iter.reset()
+        val_iter.reset()
+        metric.reset()
 
-    for batch in train_iter:
+        for batch in train_iter:
 
-        bucket = batch.bucket_key                 #get the seq length
-        model.forward(batch, is_train=True)       # compute predictions
-        model.backward()                          # compute gradients
-        model.update()                            # update parameters
-        model.update_metric(metric, batch.label)  # accumulate metric scores on prediction module
-    print('\nEpoch %d, Training %s' % (epoch, metric.get()))
+            bucket = batch.bucket_key                 #get the seq length
+            model.forward(batch, is_train=True)       # compute predictions
+            model.backward()                          # compute gradients
+            model.update()                            # update parameters
+            model.update_metric(metric, batch.label)  # accumulate metric scores on prediction module
+        print('\nEpoch %d, Training %s' % (epoch, metric.get()))
 
-    metric.reset()
+        metric.reset()
 
-    for batch in val_iter:
-        bucket = batch.bucket_key
-        model.forward(batch, is_train=False)       # compute predictions
-        model.update_metric(metric, batch.label)   # accumulate metric scores
-    print('Epoch %d, Validation %s' % (epoch, metric.get()))
+        for batch in val_iter:
+            bucket = batch.bucket_key
+            model.forward(batch, is_train=False)       # compute predictions
+            model.update_metric(metric, batch.label)   # accumulate metric scores
+        print('Epoch %d, Validation %s' % (epoch, metric.get()))
 
-#########################################
-# create a separate module for predicting
-#########################################
+except KeyboardInterrupt:
+    print('\n' * 5, '-' * 89)
+    print('Exiting from training early, saving model...')
 
-# #TODO: pred shape is not reliable when batch size not a multiple of number of training examples
+    model.save_params('../results/ner_model')
+    print('\n' * 5, '-' * 89)
 
-# # because we are designing our own loss function, the model output symbol now returns the gradient of the loss with respect to the input data
-# # to deal with this we need to create a separate module for prediction, that takes the output from an intermediate symbol
-
-# internal_symbols = model.symbol.get_internals()  # get all internal symbols
-# softmax_sym_index = internal_symbols.list_outputs().index('softmax_pred_output')  # find the index of the softmax prediction output layer
-# prediction_symbol = internal_symbols[softmax_sym_index] # retrive softmax pred symbol
-
-# # create module from internal symbol
-# model_pred = mx.mod.Module(symbol=prediction_symbol,data_names=('seq_data',), label_names=None)
-
-# # allocate memory given the input data and label shapes
-# model_pred.bind(data_shapes=train_iter.provide_data, label_shapes = None)
-
-# # initialize parameters by uniform random numbers
-# model_pred.init_params(initializer=mx.init.Uniform(scale=.1))
-
-# #set the parameters of the prediction module to the learned values
-# model_pred.set_params(arg_params=model.get_params()[0], aux_params=model.get_params()[1]) # pass learned weights to prediction model
-
-
-######################################################
-# ensure sentences are matched with entities correctly
-######################################################
-
-# #load in dict mapping indices back to words
-# word_to_index = load_obj("../data/word_index_dict")
-# index_to_word = dict([(v, k) for k, v in word_to_index.items()])
-# tag_to_index = load_obj("../data/tag_index_dict")
-# index_to_tag = dict([(v, k) for k, v in tag_to_index.items()])
-
-# train_iter.reset()
-# for i, batch in enumerate(train_iter):
-#     if i == 1:
-#         data = batch.data[0].asnumpy().tolist()
-#         labels = batch.label[0].asnumpy().tolist()
-
-#         #map dict to index values to reproduce sentences
-#         sentences_train = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
-#         sentences_test = [[index_to_word[index] for index in utterance if index != -1] for utterance in data]
-#         tags_train = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
-#         tags_test = [[index_to_tag[index] for index in tag_sequence if index != -1] for tag_sequence in labels]
-
-        # for i, sentence in enumerate(sentences_train):
-        #     if i < 3:
-        #         print("\nsentence>tag mapping: %d" % (i))
-        #         for j in list(range(len(sentence))):
-        #             print("\ntoken: ", sentences_train[i][j], "\ntag: ", tags_train[i][j])
-
-train_iter.reset()
+model.save_params('../results/ner_model')

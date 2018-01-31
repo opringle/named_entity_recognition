@@ -1,5 +1,2 @@
-*.npy
-*.csv
-*.pkl
 *.pyc
 /data

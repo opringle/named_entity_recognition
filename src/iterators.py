@@ -6,8 +6,6 @@ from mxnet.io import DataIter, DataBatch, DataDesc
 from mxnet import ndarray
 from sklearn.utils import shuffle
 
-
-#TODO: #provide data and provide label not reactive!
 class BucketNerIter(DataIter):
     """This iterator can handle variable length feature/label arrays for MXNet RNN classifiers"""
 

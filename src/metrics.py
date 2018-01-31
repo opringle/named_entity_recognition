@@ -17,8 +17,6 @@ def classifer_metrics(label, pred):
     
     label = label.astype(int)
 
-    #print("\nprediction: \n", prediction[0], "\nlabel: \n", label[0])
-
     #define if the prediction is an entity or not
     not_entity_index = load_obj("../data/tag_to_index")["O"]
     pred_is_entity = prediction != not_entity_index
