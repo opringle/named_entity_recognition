@@ -15,6 +15,6 @@ class WeightInit(mx.init.Initializer):
         super(WeightInit, self).__init__()
     def _init_weight(self, _, arr):
         #set all weights to 1
-        arr[:] = config.entity_weight
+        arr[:] = 1
         #scale the weight for not entity values
-        arr[:, :, not_entity_index] = 1
+        arr[:, :, not_entity_index] /= config.entity_weight

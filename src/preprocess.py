@@ -69,29 +69,37 @@ x = [featurize(row) for row in x]
 y = df['BILOU_tag'].values.tolist()
 
 #make a dictionary from all unique string values
-unique_features = set(list(chain.from_iterable([array.flatten().tolist() for array in x])))
-feature_to_index = {k:v for v,k in enumerate(unique_features)}
+word_features = set(list(chain.from_iterable([array[0,:].flatten().tolist() for array in x])))
+char_features = set(list(chain.from_iterable([array[2:,:].flatten().tolist() for array in x])))
+pos_features = set(list(chain.from_iterable([array[1,:].flatten().tolist() for array in x])))
+
+word_to_index = {k:v for v,k in enumerate(word_features)}
+pos_to_index = {k:v for v,k in enumerate(pos_features)}
+char_to_index = {k:v for v,k in enumerate(char_features)}
 
 #make a dictionary from all unique entity tags
 unique_tags = set(list(chain.from_iterable(y)))
 tag_to_index = {k: v for v, k in enumerate(unique_tags)}
 
 #save dicts
-save_obj(feature_to_index, "../data/feature_to_index")
+save_obj(word_to_index, "../data/word_to_index")
+save_obj(pos_to_index, "../data/pos_to_index")
+save_obj(char_to_index, "../data/char_to_index")
 save_obj(tag_to_index, "../data/tag_to_index")
 
-def index_array(array,d):
+def index_array(array):
   """map dict to array, converting strings to floats for mxnet"""
   if array.ndim == 2:
-    for row in list(range(array.shape[0])):
-      array[:,:] = np.vectorize(d.get)(array[:,:])
-      return array
+    array[0,:] = np.vectorize(word_to_index.get)(array[0,:])
+    array[1,:] = np.vectorize(pos_to_index.get)(array[1,:])
+    array[2:,:] = np.vectorize(char_to_index.get)(array[2:,:])
   else:
-    return np.vectorize(d.get)(array)
+    array[:] = np.vectorize(tag_to_index.get)(array[:])
+  return array
 
 #use dictionaries to index the arrays
-indexed_x = [index_array(array, feature_to_index) for array in x]
-indexed_y = [index_array(array, tag_to_index) for array in y]
+indexed_x = [index_array(array) for array in x]
+indexed_y = [index_array(array) for array in y]
 
 #split into training and test sets
 split_index = int(config.split[0] * len(indexed_x))

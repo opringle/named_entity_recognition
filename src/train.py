@@ -35,7 +35,9 @@ print("\ntraining sentences: {} \ntest sentences {}".format(len(x_train), len(x_
 #infer dataset features required to build module
 outside_tag_index = load_obj("../data/tag_to_index")["O"]
 num_labels = len(load_obj("../data/tag_to_index"))
-vocab_size = len(load_obj("../data/feature_to_index"))
+vocab_size = len(load_obj("../data/word_to_index"))
+tag_vocab_size = len(load_obj("../data/pos_to_index"))
+char_vocab_size = len(load_obj("../data/char_to_index"))
 features = x_train[0].shape[0]
 
 #get counts for entities in data
@@ -69,6 +71,26 @@ val_iter = BucketNerIter(sentences=x_test,
                            label_pad=outside_tag_index,
                            data_pad=-1)
 
+#######################
+# iterator sanity check
+#######################
+
+index_to_tag = dict([[v, k] for k, v in load_obj("../data/tag_to_index").items()])
+index_to_token = dict([[v, k] for k, v in load_obj("../data/word_to_index").items()])
+print("\n example data/labels: \n")
+for i, batch in enumerate(train_iter):
+    if i<5:
+        print("\nbatch: {}, buckets: {}, bucket key: {}, batch size: {}, example feature shape: {}".format(i, len(batch.data), batch.bucket_key, len(batch.data[0]), batch.data[0][0].shape))
+        # print("\nexample feature: \n", batch.data[0][0])
+        # print("\nexample label: \n", batch.label[0][0])
+        #convert back to words to check order
+        indexed_utterance = batch.data[0][0][0,:]
+        indexed_label = batch.label[0][0]
+        utterance = np.vectorize(index_to_token.get)(indexed_utterance.asnumpy())
+        label = np.vectorize(index_to_tag.get)(indexed_label.asnumpy())
+        print("utterance: {}, label: {}".format(utterance,label))
+
+train_iter.reset()
 ###############################################################
 # create bucketing module to train on variable sequence lengths
 ###############################################################
@@ -109,31 +131,25 @@ def sym_gen(seq_len):
     print("\ninput data shape: ", seq_data.infer_shape(seq_data=input_feature_shape)[1][0])
     print("\ninput label shape: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #initialize weight array (to multiply loss later)
+    #initialize weight array (to multiply loss later), and broadcast array to same shape as loss
     weights = mx.sym.BlockGrad(mx.sym.Variable(shape=(1,1, num_labels), init=WeightInit(), name='class_weights'))
-    print("\ninput weights shape: ", weights.infer_shape()[1][0])
-
-    #broadcast array to same shape as loss
     label_weights = mx.sym.BlockGrad(mx.sym.broadcast_to(weights, shape=(config.batch_size, seq_len, num_labels), name='broadcast_class_weights'))
-    print("\nbroadcast weights shape: ", label_weights.infer_shape()[1][0])
+    print("\nweights shape: ", label_weights.infer_shape()[1][0])
 
     #split input features
-    tokens = mx.sym.slice_axis(seq_data, axis = 1, begin = 0, end = 1)
-    pos_tags = mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=1, end=2), axes = (0,2,1))
-    char_features = mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=2, end=features), axes = (0,2,1))
+    tokens = mx.sym.Reshape(mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=0, end=1), axes = (0,2,1)),shape = (0,0))
+    char_features = mx.sym.Reshape(mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=2, end=features), axes=(0, 2, 1)),shape = (0,1,seq_len,-1))
+    pos_tags = mx.sym.one_hot(mx.sym.Reshape(mx.sym.slice_axis(seq_data, axis=1, begin=1, end=2), shape = (0,seq_len)), tag_vocab_size)
     print("\ntoken features shape: ", tokens.infer_shape(seq_data=input_feature_shape)[1][0])
-    print("\ntransposed postag features shape: ", pos_tags.infer_shape(seq_data=input_feature_shape)[1][0])
-    print("\ntransposed char features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\nchar features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+    print("\nonehot postag features shape: ", pos_tags.infer_shape(seq_data=input_feature_shape)[1][0])
 
     print("""\n\t#########################################
         # CHARACTER LEVEL CONVOLUTIONAL COMPONENT
         #########################################""")
 
-    char_features = mx.sym.Reshape(char_features, shape = (0,1,seq_len,-1))
-    print("\nreshaped char features shape: ", char_features.infer_shape(seq_data=input_feature_shape)[1][0])
-
-    embedded_char_features = mx.sym.Embedding(data=char_features, input_dim=100, output_dim=config.char_vectorsize, name='char_embed')
-    print("\nembedded char features shape: ", embedded_char_features.infer_shape(seq_data=input_feature_shape)[1][0])
+    char_embeddings = mx.sym.Embedding(data=char_features, input_dim=char_vocab_size, output_dim=config.char_vectorsize, name='char_embed')
+    print("\nembedded char features shape: ", char_embeddings.infer_shape(seq_data=input_feature_shape)[1][0])
 
     cnn_outputs = []
     for i, filter_size in enumerate(config.char_filter_list):
@@ -141,7 +157,7 @@ def sym_gen(seq_len):
         print("\n applying filters of size ", filter_size)
         
         #convolutional layer with a kernel that slides over entire words resulting in a 1d output
-        convi = mx.sym.Convolution(data=embedded_char_features, 
+        convi = mx.sym.Convolution(data=char_embeddings,
                                    kernel=(1, filter_size, config.char_vectorsize), 
                                    stride = (1,1,1), 
                                    num_filter=config.char_filters,
@@ -155,32 +171,29 @@ def sym_gen(seq_len):
         pooli = mx.sym.Pooling(data=acti, pool_type='max', kernel=(1, config.max_token_chars - filter_size + 1, 1), stride=(1, 1, 1))
         print("\n\tpooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
 
-        pooli = mx.sym.Reshape(pooli, shape = (0,0,0))
-        print("\n\treshaped pooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
+        pooli = mx.sym.transpose(mx.sym.Reshape(pooli, shape = (0,0,0)), axes = (0,2,1))
+        print("\n\treshaped/transposed pooled features shape: ", pooli.infer_shape(seq_data=input_feature_shape)[1][0])
 
         cnn_outputs.append(pooli)
 
     #combine features from all filters
-    concat = mx.sym.transpose(mx.sym.Concat(*cnn_outputs, dim=1), axes = (0,2,1))
-    print("\nall char features shape: ", concat.infer_shape(seq_data=input_feature_shape)[1][0])
+    cnn_char_features = mx.sym.Concat(*cnn_outputs, dim=2)
+    print("\ncnn char features shape: ", cnn_char_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #apply dropout to this layer
-    h_drop = mx.sym.Dropout(data=concat, p=config.cnn_dropout, mode='training')
+    cnn_char_features = mx.sym.Dropout(data=cnn_char_features, p=config.cnn_dropout, mode='training')
 
     print("""\n\t#########################
         # WORD EMBEDDING FEATURES
         #########################""")
 
-    reshaped_tokens = mx.sym.Reshape(tokens, shape = (0,-1))
-    print("\nreshaped token features shape: ", reshaped_tokens.infer_shape(seq_data=input_feature_shape)[1][0])
-
     #create an embedding layer
-    embed_layer = mx.sym.Embedding(data=reshaped_tokens, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
-    print("\nembedding layer shape: ", embed_layer.infer_shape(seq_data=input_feature_shape)[1][0])
+    word_embeddings = mx.sym.Embedding(data=tokens, input_dim=vocab_size, output_dim=config.word_embedding_vector_length, name='vocab_embed')
+    print("\nembedding layer shape: ", word_embeddings.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #combining all features
-    all_features = mx.sym.Concat(*[embed_layer, h_drop, pos_tags], dim = 2)
-    print("\nall features  shape: ", all_features.infer_shape(seq_data=input_feature_shape)[1][0])
+    rnn_features = mx.sym.Concat(*[word_embeddings], dim = 2)#, cnn_char_features, pos_tags, word_embeddings
+    print("\nall features  shape: ", rnn_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
     print("""\n\t##############################
         # BIDIRECTIONAL LSTM COMPONENT
@@ -188,7 +201,7 @@ def sym_gen(seq_len):
 
     #unroll the lstm cell in time, merging outputs
     bi_cell.reset()
-    output, states = bi_cell.unroll(length=seq_len, inputs=all_features, merge_outputs=True)
+    output, states = bi_cell.unroll(length=seq_len, inputs=rnn_features, merge_outputs=True)
     print("\noutputs from all lstm cells in final layer: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #reshape outputs so each lstm state size can be mapped to n labels
@@ -208,7 +221,7 @@ def sym_gen(seq_len):
         #################################""")
 
     #apply softmax function to ensure outputs from fc are between 0 and 1
-    sm = mx.sym.softmax(data=reshaped_fc, axis=1, name='softmax_pred')
+    sm = mx.sym.softmax(data=reshaped_fc, axis=2, name='softmax_pred')
     print("\nshape after applying softmax to data: ", sm.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #create a symbol to use with evaluation metrics, since we use a custom loss function
@@ -227,7 +240,7 @@ def sym_gen(seq_len):
     print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
 
     #finally create a symbol group consisting of both the model output (gradient of loss with respect to data) and the softmax layer output (model predictions)
-    network = mx.sym.Group([softmax_output, loss_grad])
+    network = mx.sym.Group([loss_grad, softmax_output])
 
     return network, ('seq_data',), ('seq_label',)
 
