@@ -1,3 +1,4 @@
+
 #modules
 from collections import Counter
 import mxnet as mx
@@ -59,8 +60,8 @@ train_iter = BucketNerIter(sentences=x_train,
                            buckets = config.buckets,
                            data_name='seq_data',
                            label_name='seq_label',
-                           label_pad=outside_tag_index,
-                           data_pad=-1)
+                           label_pad=-7,
+                           data_pad=-6)
 
 val_iter = BucketNerIter(sentences=x_test,
                            entities=y_test,
@@ -68,8 +69,8 @@ val_iter = BucketNerIter(sentences=x_test,
                            buckets=train_iter.buckets,
                            data_name='seq_data',
                            label_name='seq_label',
-                           label_pad=outside_tag_index,
-                           data_pad=-1)
+                           label_pad=-7,
+                           data_pad=-6)
 
 #######################
 # iterator sanity check
@@ -131,11 +132,6 @@ def sym_gen(seq_len):
     print("\ninput data shape: ", seq_data.infer_shape(seq_data=input_feature_shape)[1][0])
     print("\ninput label shape: ", seq_label.infer_shape(seq_label=input_label_shape)[1][0])
 
-    #initialize weight array (to multiply loss later), and broadcast array to same shape as loss
-    weights = mx.sym.BlockGrad(mx.sym.Variable(shape=(1,1, num_labels), init=WeightInit(), name='class_weights'))
-    label_weights = mx.sym.BlockGrad(mx.sym.broadcast_to(weights, shape=(config.batch_size, seq_len, num_labels), name='broadcast_class_weights'))
-    print("\nweights shape: ", label_weights.infer_shape()[1][0])
-
     #split input features
     tokens = mx.sym.Reshape(mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=0, end=1), axes = (0,2,1)),shape = (0,0))
     char_features = mx.sym.Reshape(mx.sym.transpose(mx.sym.slice_axis(seq_data, axis=1, begin=2, end=features), axes=(0, 2, 1)),shape = (0,1,seq_len,-1))
@@ -181,7 +177,7 @@ def sym_gen(seq_len):
     print("\ncnn char features shape: ", cnn_char_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #apply dropout to this layer
-    cnn_char_features = mx.sym.Dropout(data=cnn_char_features, p=config.cnn_dropout, mode='training')
+    regularized_cnn_char_features = mx.sym.Dropout(data=cnn_char_features, p=config.cnn_dropout, mode='training', name = 'regularized charCnn features')
 
     print("""\n\t#########################
         # WORD EMBEDDING FEATURES
@@ -192,7 +188,7 @@ def sym_gen(seq_len):
     print("\nembedding layer shape: ", word_embeddings.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #combining all features
-    rnn_features = mx.sym.Concat(*[word_embeddings], dim = 2)#, cnn_char_features, pos_tags, word_embeddings
+    rnn_features = mx.sym.Concat(*[word_embeddings, regularized_cnn_char_features, pos_tags], dim=2)
     print("\nall features  shape: ", rnn_features.infer_shape(seq_data=input_feature_shape)[1][0])
 
     print("""\n\t##############################
@@ -205,44 +201,24 @@ def sym_gen(seq_len):
     print("\noutputs from all lstm cells in final layer: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #reshape outputs so each lstm state size can be mapped to n labels
-    output = mx.sym.Reshape(output, shape=(-1,config.lstm_state_size*2), name='r_output')
-    print("\nreshaped output shape: ", output.infer_shape(seq_data=input_feature_shape)[1][0])
+    rnn_output = mx.sym.Reshape(output, shape=(-1,config.lstm_state_size*2), name='r_output')
+    print("\nreshaped output shape: ", rnn_output.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #map each output to num labels
-    fc = mx.sym.FullyConnected(output, num_hidden=num_labels, name='fc_layer')
+    fc = mx.sym.FullyConnected(rnn_output, num_hidden=num_labels, name='fc_layer')
     print("\nfully connected layer shape: ", fc.infer_shape(seq_data=input_feature_shape)[1][0])
 
     #reshape back to same shape as loss will be
-    reshaped_fc = mx.sym.reshape(fc, shape = (config.batch_size, seq_len, num_labels))
+    reshaped_fc = mx.sym.transpose(mx.sym.reshape(fc, shape = (config.batch_size, seq_len, num_labels)), axes = (0,2,1))
     print("\nreshaped fc for loss: ", reshaped_fc.infer_shape(seq_data=input_feature_shape)[1][0])
 
     print("""\n\t#################################
-        # WEIGHTED SOFTMAX LOSS COMPONENT
+        # SOFTMAX LOSS COMPONENT
         #################################""")
 
-    #apply softmax function to ensure outputs from fc are between 0 and 1
-    sm = mx.sym.softmax(data=reshaped_fc, axis=2, name='softmax_pred')
-    print("\nshape after applying softmax to data: ", sm.infer_shape(seq_data=input_feature_shape)[1][0])
+    sm = mx.sym.SoftmaxOutput(data = reshaped_fc, label=seq_label, ignore_label = -7, use_ignore = True, multi_output = True, name='softmax')
 
-    #create a symbol to use with evaluation metrics, since we use a custom loss function
-    softmax_output = mx.sym.BlockGrad(data = sm, name = 'softmax')
-
-    #one hot encode label input
-    one_hot_labels = mx.sym.one_hot(indices=seq_label, depth=num_labels, name='one_hot_labels')
-    print("\nonehot label shape: ", one_hot_labels.infer_shape(seq_label=input_label_shape)[1][0])
-
-    #compute cross entropy loss between predictions and labels
-    loss = -((one_hot_labels * mx.sym.log(sm)) + ((1 - one_hot_labels) * mx.sym.log(1 - sm)))
-    print("\ncross entropy loss shape: ", loss.infer_shape(seq_data = input_feature_shape, seq_label=input_label_shape)[1][0])
-
-    #symbol to compute the gradient of the loss with respect to the input data
-    loss_grad = mx.sym.MakeLoss(loss * label_weights, name='loss_gradient')
-    print("\nloss grad shape: ", loss_grad.infer_shape(seq_data=input_feature_shape, seq_label=input_label_shape)[1][0])
-
-    #finally create a symbol group consisting of both the model output (gradient of loss with respect to data) and the softmax layer output (model predictions)
-    network = mx.sym.Group([loss_grad, softmax_output])
-
-    return network, ('seq_data',), ('seq_label',)
+    return sm, ('seq_data',), ('seq_label',)
 
 
 #####################################

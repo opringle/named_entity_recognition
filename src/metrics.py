@@ -13,7 +13,7 @@ def classifer_metrics(label, pred):
     F = 2 * Precision * Recall / (Recall + Precision)"""
 
     #take highest probability as the prediction of the entity for each word
-    prediction = np.argmax(pred, axis=2)
+    prediction = np.argmax(pred, axis=1)
     
     label = label.astype(int)
 
@@ -60,7 +60,7 @@ def accuracy(label, pred):
     """feval for computing accuracy, since we require custom metrics"""
     return np.mean(label == np.argmax(pred, axis=2))
 
-def composite_classifier_metrics():
+def composite_internal_classifier_metrics():
 
     metric1 = mx.metric.CustomMetric(feval=entity_precision,
                            name='entity precision',
@@ -80,6 +80,20 @@ def composite_classifier_metrics():
                                      name = 'total accuracy', 
                                      output_names=['softmax_output'],
                                      label_names=['seq_label'])
+
+    metrics = [metric4, metric1, metric2, metric3]
+
+    return mx.metric.CompositeEvalMetric(metrics)
+
+def composite_classifier_metrics():
+
+    metric1 = mx.metric.CustomMetric(feval=entity_precision, name='entity precision')
+
+    metric2 = mx.metric.CustomMetric(feval=entity_recall, name='entity recall')
+
+    metric3 = mx.metric.CustomMetric(feval=entity_f1, name='entity f1 score')
+
+    metric4 = mx.metric.Accuracy()
 
     metrics = [metric4, metric1, metric2, metric3]
 
