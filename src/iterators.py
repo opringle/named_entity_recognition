@@ -7,7 +7,11 @@ from mxnet import ndarray
 from sklearn.utils import shuffle
 
 class BucketNerIter(DataIter):
-    """This iterator can handle variable length feature/label arrays for MXNet RNN classifiers"""
+    """
+    This iterator can handle variable length feature/label arrays for MXNet RNN classifiers.
+    This iterator can ingest 2d list of sentences, 2d list of entities and 3d list of characters.
+
+    """
 
     def __init__(self, sentences, entities, batch_size, buckets=None, data_pad=-1, label_pad = -1,
                  data_name='data', label_name='softmax_label', dtype='float32'
