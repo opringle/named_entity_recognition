@@ -19,8 +19,6 @@
 
 # -*- coding: utf-8 -*-
 
-# Todo:
-
 from collections import Counter
 import itertools
 import iterators
@@ -29,8 +27,8 @@ import numpy as np
 import pandas as pd
 import mxnet as mx
 import argparse
+import pickle
 import logging
-import metrics
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -38,26 +36,32 @@ parser = argparse.ArgumentParser(description="Deep neural network for multivaria
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--data-dir', type=str, default='../data',
                     help='relative path to input data')
+parser.add_argument('--output-dir', type=str, default='../results',
+                    help='directory to save model files to')
 parser.add_argument('--max-records', type=int, default=None,
                     help='total records before data split')
 parser.add_argument('--train_fraction', type=float, default=0.8,
                     help='fraction of data to use for training. remainder used for testing.')
 parser.add_argument('--batch-size', type=int, default=128,
                     help='the batch size.')
-parser.add_argument('--buckets', type=str, default="7,10,14",
+parser.add_argument('--buckets', type=str, default="",
                     help='unique bucket sizes')
-
-
-parser.add_argument('--filter-list', type=str, default="6,12,18",
-                    help='unique filter sizes')
-parser.add_argument('--num-filters', type=int, default=100,
+parser.add_argument('--char-embed', type=int, default=25,
+                    help='Embedding size for each unique character.')
+parser.add_argument('--char-filter-list', type=str, default="3,4,5",
+                    help='unique filter sizes for char level cnn')
+parser.add_argument('--char-filters', type=int, default=20,
                     help='number of each filter size')
-parser.add_argument('--recurrent-state-size', type=int, default=100,
+parser.add_argument('--word-embed', type=int, default=500,
+                    help='Embedding size for each unique character.')
+parser.add_argument('--word-filter-list', type=str, default="3,4,5",
+                    help='unique filter sizes for char level cnn')
+parser.add_argument('--word-filters', type=int, default=200,
+                    help='number of each filter size')
+parser.add_argument('--lstm-state-size', type=int, default=100,
                     help='number of hidden units in each unrolled recurrent cell')
-parser.add_argument('--seasonal-period', type=int, default=24,
-                    help='time between seasonal measurements')
-parser.add_argument('--time-interval', type=int, default=1,
-                    help='time between each measurement')
+parser.add_argument('--lstm-layers', type=int, default=1,
+                    help='number of recurrent layers')
 parser.add_argument('--gpus', type=str, default='',
                     help='list of gpus to run, e.g. 0 or 0,2,5. empty means using cpu. ')
 parser.add_argument('--optimizer', type=str, default='adam',
@@ -73,6 +77,15 @@ parser.add_argument('--save-period', type=int, default=20,
 parser.add_argument('--model_prefix', type=str, default='electricity_model',
                     help='prefix for saving model params')
 
+def save_obj(obj, name):
+    with open(name + '.pkl', 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+def save_model():
+    if not os.path.exists(args.output_dir):
+        os.mkdir(args.output_dir)
+    return mx.callback.do_checkpoint(os.path.join(args.output_dir, "checkpoint"), args.save_period)
+
 def build_vocab(nested_list):
     """
     :param nested_list: list of list of string
@@ -87,7 +100,6 @@ def build_vocab(nested_list):
     # Mapping from label to index
     vocabulary = {x: i for i, x in enumerate(vocabulary_inv)}
     return vocabulary, vocabulary_inv
-
 
 def build_iters(data_dir, max_records, train_fraction, batch_size, buckets=None):
     """
@@ -114,6 +126,7 @@ def build_iters(data_dir, max_records, train_fraction, batch_size, buckets=None)
     entity_to_index, index_to_entity = build_vocab(entities)
     word_to_index, index_to_word = build_vocab(sentences)
     char_to_index, index_to_char = build_vocab([np.array([c for c in word]) for word in index_to_word])
+    save_obj(entity_to_index, os.path.join(args.data_dir, "tag_to_index"))
 
     # Map strings to integer values
     indexed_entities=[list(map(entity_to_index.get, l)) for l in entities]
@@ -126,143 +139,98 @@ def build_iters(data_dir, max_records, train_fraction, batch_size, buckets=None)
     X_token_test, X_char_test, Y_test = indexed_tokens[idx:], indexed_chars[idx:], indexed_entities[idx:]
 
     # build iterators to feed batches to network
-    train_iter = iterators.BucketNerIter(data={"sentences":X_token_train, "characters":X_char_train}, label=Y_train,
-                                         batch_size=batch_size, buckets=buckets)
-    val_iter = iterators.BucketNerIter(data={"sentences": X_token_test, "characters": X_char_test}, label=Y_test,
-                                       batch_size=batch_size, buckets=train_iter.buckets)
-    return train_iter, val_iter
+    train_iter = iterators.BucketNerIter(sentences=X_token_train, characters=X_char_train, label=Y_train,
+                                         max_token_chars=5, batch_size=batch_size, buckets=buckets)
+    val_iter = iterators.BucketNerIter(sentences=X_token_test, characters=X_char_test, label=Y_test,
+                                         max_token_chars=train_iter.max_token_chars, batch_size=batch_size, buckets=train_iter.buckets)
+    return train_iter, val_iter, word_to_index, char_to_index, entity_to_index
 
-
-def sym_gen(train_iter, q, filter_list, num_filter, dropout, rcells, skiprcells, seasonal_period, time_interval):
+def sym_gen(seq_len):
     """
-
-    :param train_iter:
-    :param q:
-    :param filter_list:
-    :param num_filter:
-    :param dropout:
-    :param rcells:
-    :param skiprcells:
-    :param seasonal_period:
-    :param time_interval:
-    :return:
+    Build NN symbol depending on the length of the input sequence
     """
-    input_feature_shape = train_iter.provide_data[0][1]
-    X = mx.symbol.Variable(train_iter.provide_data[0].name)
+    sentence_shape = train_iter.provide_data[0][1]
+    char_sentence_shape = train_iter.provide_data[1][1]
+    entities_shape = train_iter.provide_label[0][1]
+
+    X_sent = mx.symbol.Variable(train_iter.provide_data[0].name)
+    X_char_sent = mx.symbol.Variable(train_iter.provide_data[1].name)
     Y = mx.sym.Variable(train_iter.provide_label[0].name)
 
-    # reshape data before applying convolutional layer (takes 4D shape incase you ever work with images)
-    conv_input = mx.sym.reshape(data=X, shape=(0, 1, q, -1))
+    ###############################
+    # Character embedding component
+    ###############################
+    char_embeddings = mx.sym.Embedding(data=X_char_sent, input_dim=len(char_to_index), output_dim=args.char_embed, name='char_embed')
+    char_embeddings = mx.sym.reshape(data=char_embeddings, shape=(0,1,seq_len,-1,args.char_embed), name='char_embed2')
 
-    ###############
-    # CNN Component
-    ###############
-    outputs = []
-    for i, filter_size in enumerate(filter_list):
-        # pad input array to ensure number output rows = number input rows after applying kernel
-        padi = mx.sym.pad(data=conv_input, mode="constant", constant_value=0,
-                          pad_width=(0, 0, 0, 0, filter_size - 1, 0, 0, 0))
-        convi = mx.sym.Convolution(data=padi, kernel=(filter_size, input_feature_shape[2]), num_filter=num_filter)
-        acti = mx.sym.Activation(data=convi, act_type='relu')
-        trans = mx.sym.reshape(mx.sym.transpose(data=acti, axes=(0, 2, 1, 3)), shape=(0, 0, 0))
-        outputs.append(trans)
-    cnn_features = mx.sym.Concat(*outputs, dim=2)
-    cnn_reg_features = mx.sym.Dropout(cnn_features, p=dropout)
+    char_cnn_outputs = []
+    for i, filter_size in enumerate(args.char_filter_list):
+        # Kernel that slides over entire words resulting in a 1d output
+        convi = mx.sym.Convolution(data=char_embeddings, kernel=(1, filter_size, args.char_embed), stride=(1, 1, 1),
+                                   num_filter=args.char_filters, name="char_conv_layer_" + str(i))
+        acti = mx.sym.Activation(data=convi, act_type='tanh')
+        pooli = mx.sym.Pooling(data=acti, pool_type='max', kernel=(1, char_sentence_shape[2] - filter_size + 1, 1),
+                               stride=(1, 1, 1), name="char_pool_layer_" + str(i))
+        pooli = mx.sym.transpose(mx.sym.Reshape(pooli, shape=(0, 0, 0)), axes=(0, 2, 1), name="cchar_conv_layer_" + str(i))
+        char_cnn_outputs.append(pooli)
 
-    ###############
-    # RNN Component
-    ###############
-    stacked_rnn_cells = mx.rnn.SequentialRNNCell()
-    for i, recurrent_cell in enumerate(rcells):
-        stacked_rnn_cells.add(recurrent_cell)
-        stacked_rnn_cells.add(mx.rnn.DropoutCell(dropout))
-    outputs, states = stacked_rnn_cells.unroll(length=q, inputs=cnn_reg_features, merge_outputs=False)
-    rnn_features = outputs[-1]  # only take value from final unrolled cell for use later
+    # combine features from all filters & apply dropout
+    cnn_char_features = mx.sym.Concat(*char_cnn_outputs, dim=2, name="cnn_char_features")
+    regularized_cnn_char_features = mx.sym.Dropout(data=cnn_char_features, p=args.dropout, mode='training',
+                                                   name='regularized charCnn features')
 
-    ####################
-    # Skip-RNN Component
-    ####################
-    stacked_rnn_cells = mx.rnn.SequentialRNNCell()
-    for i, recurrent_cell in enumerate(skiprcells):
-        stacked_rnn_cells.add(recurrent_cell)
-        stacked_rnn_cells.add(mx.rnn.DropoutCell(dropout))
-    outputs, states = stacked_rnn_cells.unroll(length=q, inputs=cnn_reg_features, merge_outputs=False)
+    ##################################
+    # Combine char and word embeddings
+    ##################################
+    word_embeddings = mx.sym.Embedding(data=X_sent, input_dim=len(word_to_index), output_dim=args.word_embed, name='word_embed')
+    rnn_features = mx.sym.Concat(*[word_embeddings, regularized_cnn_char_features], dim=2, name='rnn input')
 
-    # Take output from cells p steps apart
-    p = int(seasonal_period / time_interval)
-    output_indices = list(range(0, q, p))
-    outputs.reverse()
-    skip_outputs = [outputs[i] for i in output_indices]
-    skip_rnn_features = mx.sym.concat(*skip_outputs, dim=1)
+    ##############################
+    # Bidirectional LSTM component
+    ##############################
 
-    ##########################
-    # Autoregressive Component
-    ##########################
-    auto_list = []
-    for i in list(range(input_feature_shape[2])):
-        time_series = mx.sym.slice_axis(data=X, axis=2, begin=i, end=i + 1)
-        fc_ts = mx.sym.FullyConnected(data=time_series, num_hidden=1)
-        auto_list.append(fc_ts)
-    ar_output = mx.sym.concat(*auto_list, dim=1)
+    # unroll the lstm cell in time, merging outputs
+    bi_cell.reset()
+    output, states = bi_cell.unroll(length=seq_len, inputs=rnn_features, merge_outputs=True)
 
-    ######################
-    # Prediction Component
-    ######################
-    neural_components = mx.sym.concat(*[rnn_features, skip_rnn_features], dim=1)
-    neural_output = mx.sym.FullyConnected(data=neural_components, num_hidden=input_feature_shape[2])
-    model_output = neural_output + ar_output
-    loss_grad = mx.sym.LinearRegressionOutput(data=model_output, label=Y)
-    return loss_grad, [v.name for v in train_iter.provide_data], [v.name for v in train_iter.provide_label]
+    # Map to num entity classes
+    rnn_output = mx.sym.Reshape(output, shape=(-1, args.lstm_state_size * 2), name='r_output')
+    fc = mx.sym.FullyConnected(data=rnn_output, num_hidden=len(entity_to_index), name='fc_layer')
 
+    # reshape back to same shape as loss will be
+    reshaped_fc = mx.sym.transpose(mx.sym.reshape(fc, shape=(-1, seq_len, len(entity_to_index))), axes=(0, 2, 1))
+    sm = mx.sym.SoftmaxOutput(data=reshaped_fc, label=Y, ignore_label=-1, use_ignore=True, multi_output=True, name='softmax')
+    return sm, [v.name for v in train_iter.provide_data], [v.name for v in train_iter.provide_label]
 
-def train(symbol, train_iter, valid_iter, data_names, label_names):
+def train(train_iter, val_iter):
+    import metrics
     devs = mx.cpu() if args.gpus is None or args.gpus is '' else [mx.gpu(int(i)) for i in args.gpus.split(',')]
-    module = mx.mod.Module(symbol, data_names=data_names, label_names=label_names, context=devs)
-    module.bind(data_shapes=train_iter.provide_data, label_shapes=train_iter.provide_label)
-    module.init_params(mx.initializer.Uniform(0.1))
-    module.init_optimizer(optimizer=args.optimizer, optimizer_params={'learning_rate': args.lr})
-
-    for epoch in range(1, args.num_epochs + 1):
-        train_iter.reset()
-        val_iter.reset()
-        for batch in train_iter:
-            module.forward(batch, is_train=True)  # compute predictions
-            module.backward()  # compute gradients
-            module.update()  # update parameters
-
-        train_pred = module.predict(train_iter).asnumpy()
-        train_label = train_iter.label[0][1].asnumpy()
-        print('\nMetrics: Epoch %d, Training %s' % (epoch, metrics.evaluate(train_pred, train_label)))
-
-        val_pred = module.predict(val_iter).asnumpy()
-        val_label = val_iter.label[0][1].asnumpy()
-        print('Metrics: Epoch %d, Validation %s' % (epoch, metrics.evaluate(val_pred, val_label)))
-
-        if epoch % args.save_period == 0 and epoch > 1:
-            module.save_checkpoint(prefix=os.path.join("../models/", args.model_prefix), epoch=epoch,
-                                   save_optimizer_states=False)
-        if epoch == args.num_epochs:
-            module.save_checkpoint(prefix=os.path.join("../models/", args.model_prefix), epoch=epoch,
-                                   save_optimizer_states=False)
-
+    module = mx.mod.BucketingModule(sym_gen, train_iter.default_bucket_key, context=devs)
+    module.fit(train_data=train_iter,
+               eval_data=val_iter,
+               eval_metric=metrics.composite_classifier_metrics(),
+               optimizer=args.optimizer,
+               optimizer_params={'learning_rate': args.lr },
+               initializer=mx.initializer.Uniform(0.1),
+               num_epoch=args.num_epochs,
+               epoch_end_callback=save_model())
 
 if __name__ == '__main__':
     # parse args
     args = parser.parse_args()
-    args.buckets = list(map(float, args.buckets.split(',')))
+    args.buckets = list(map(int, args.buckets.split(','))) if len(args.buckets) > 0 else None
+    args.char_filter_list = list(map(int, args.char_filter_list.split(',')))
 
     # Build data iterators
-    build_iters(args.data_dir, args.max_records, args.train_fraction, args.batch_size,
-                                                  args.buckets)
+    train_iter, val_iter, word_to_index, char_to_index, entity_to_index = build_iters(args.data_dir, args.max_records,
+                                                                     args.train_fraction, args.batch_size, args.buckets)
 
-    # # Choose cells for recurrent layers: each cell will take the output of the previous cell in the list
-    # rcells = [mx.rnn.GRUCell(num_hidden=args.recurrent_state_size)]
-    # skiprcells = [mx.rnn.LSTMCell(num_hidden=args.recurrent_state_size)]
-    #
-    # # Define network symbol
-    # symbol, data_names, label_names = sym_gen(train_iter, args.q, args.filter_list, args.num_filters,
-    #                                           args.dropout, rcells, skiprcells, args.seasonal_period,
-    #                                           args.time_interval)
-    #
-    # # train cnn model
-    # train(symbol, train_iter, val_iter, data_names, label_names)
+    # Define the recurrent layer
+    bi_cell = mx.rnn.SequentialRNNCell()
+    for layer_num in range(args.lstm_layers):
+        bi_cell.add(mx.rnn.BidirectionalCell(
+            mx.rnn.LSTMCell(num_hidden=args.lstm_state_size, prefix="forward_layer_" + str(layer_num)),
+            mx.rnn.LSTMCell(num_hidden=args.lstm_state_size, prefix="backward_layer_" + str(layer_num))))
+        bi_cell.add(mx.rnn.DropoutCell(args.dropout))
+
+    train(train_iter, val_iter)
