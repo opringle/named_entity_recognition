@@ -1,28 +1,45 @@
+# !/usr/bin/env python
+
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# -*- coding: utf-8 -*-
+
 import mxnet as mx
 import numpy as np
+import pickle
 
-#custom modules
-from data_helpers import load_obj
+def load_obj(name):
+    with open(name + '.pkl', 'rb') as f:
+        return pickle.load(f)
 
-#read in dictionary mapping BILOU entity tags to integer indices
 tag_dict = load_obj("../data/tag_to_index")
-outside_tag_index = tag_dict["O"]
+not_entity_index = tag_dict["O"]
 
 def classifer_metrics(label, pred):
-    """computes the F1 score
-    F = 2 * Precision * Recall / (Recall + Precision)"""
-
-    #take highest probability as the prediction of the entity for each word
+    """
+    computes f1, precision and recall on the entity class
+    """
     prediction = np.argmax(pred, axis=1)
-    
     label = label.astype(int)
 
-    #define if the prediction is an entity or not
-    not_entity_index = load_obj("../data/tag_to_index")["O"]
     pred_is_entity = prediction != not_entity_index
     label_is_entity = label != not_entity_index
 
-    #is the prediction correct?
     corr_pred = (prediction == label) == (pred_is_entity == True)
 
     #how many entities are there?
@@ -41,10 +58,7 @@ def classifer_metrics(label, pred):
     recall = correct_entitites / num_entities
     if num_entities == 0:
         recall = np.nan
-
-    #f1 score combines the two 
     f1 = 2 * precision * recall / (precision + recall)
-
     return precision, recall, f1
 
 def entity_precision(label, pred):
@@ -56,45 +70,10 @@ def entity_recall(label, pred):
 def entity_f1(label, pred):
     return classifer_metrics(label, pred)[2]
 
-def accuracy(label, pred):
-    """feval for computing accuracy, since we require custom metrics"""
-    return np.mean(label == np.argmax(pred, axis=2))
-
-def composite_internal_classifier_metrics():
-
-    metric1 = mx.metric.CustomMetric(feval=entity_precision,
-                           name='entity precision',
-                           output_names=['softmax_output'],
-                           label_names=['seq_label'])
-
-    metric2 = mx.metric.CustomMetric(feval=entity_recall,
-                           name='entity recall',
-                           output_names=['softmax_output'],
-                           label_names=['seq_label'])   
-    metric3 = mx.metric.CustomMetric(feval=entity_f1,
-                           name='entity f1 score',
-                           output_names=['softmax_output'],
-                           label_names=['seq_label'])
-
-    metric4 = mx.metric.CustomMetric(feval = accuracy, 
-                                     name = 'total accuracy', 
-                                     output_names=['softmax_output'],
-                                     label_names=['seq_label'])
-
-    metrics = [metric4, metric1, metric2, metric3]
-
-    return mx.metric.CompositeEvalMetric(metrics)
-
 def composite_classifier_metrics():
-
     metric1 = mx.metric.CustomMetric(feval=entity_precision, name='entity precision')
-
     metric2 = mx.metric.CustomMetric(feval=entity_recall, name='entity recall')
-
     metric3 = mx.metric.CustomMetric(feval=entity_f1, name='entity f1 score')
-
     metric4 = mx.metric.Accuracy()
 
-    metrics = [metric4, metric1, metric2, metric3]
-
-    return mx.metric.CompositeEvalMetric(metrics)
+    return mx.metric.CompositeEvalMetric([metric4, metric1, metric2, metric3])

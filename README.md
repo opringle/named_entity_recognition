@@ -1,10 +1,11 @@
 ## Goal
 
-This repo contains code inspired by the following [state of the art neural network architecture](https://www.aclweb.org/anthology/Q16-1026) for the task of named entity recognition in MXNet.
+- This repo contains an MXNet implementation of this state of the art [entity recognition model](https://www.aclweb.org/anthology/Q16-1026).
+- You can find my blog post on the model [here](https://opringle.github.io/2018/02/06/CNNLSTM_entity_recognition.html).
+
+![](./docs/arch1.png)
 
 ## Running the code
 
-1. Download and unzip the dataset into `./data/`
-2. Preprocess the data: `$ cd ./src` & `python preprocess.py`
-3. Set hyperparameters in `./src/config`
-4. Train the model: `$ cd ./src` & `python preprocess.py`
+1. Clone this repo
+2. Train the model: `$ cd src && python ner.py`
