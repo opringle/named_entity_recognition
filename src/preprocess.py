@@ -47,4 +47,4 @@ df3 = df.groupby("utterance_id")["POS_tag"].apply(lambda x: np.array(x)).to_fram
 df = df1.merge(df2.merge(df3, how = "left", on = "utterance_id"), how = "left", on = "utterance_id")
 
 #save the dataframe to a csv file
-df.to_pickle("../data/ner_data.pkl")
+df.to_pickle("../preprocessed_data/ner_data.pkl")
